@@ -1,6 +1,27 @@
 <template>
   <div class="min-h-screen bg-[#0b0d12] text-white flex flex-col">
 
+    <!-- TELA DE LOADING GLOBAL -->
+    <Transition name="fade-loading">
+      <div v-if="appCarregando" class="fixed inset-0 bg-[#0b0d12] z-[999] flex flex-col items-center justify-center gap-6">
+        <div class="relative">
+          <div class="w-20 h-20 rounded-3xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-4xl shadow-2xl shadow-teal-500/40">💰</div>
+          <div class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-teal-500 flex items-center justify-center">
+            <svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          </div>
+        </div>
+        <div class="text-center">
+          <p class="font-black text-xl tracking-tight text-white">FinanceApp</p>
+          <p class="text-gray-500 text-sm mt-1">Carregando seus dados...</p>
+        </div>
+        <div class="flex gap-1.5 mt-2">
+          <div class="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style="animation-delay:0ms"></div>
+          <div class="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style="animation-delay:150ms"></div>
+          <div class="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style="animation-delay:300ms"></div>
+        </div>
+      </div>
+    </Transition>
+
     <header class="bg-[#0b0d12]/95 backdrop-blur-lg border-b border-white/5 px-5 h-14 flex items-center justify-between sticky top-0 z-40">
       <div class="flex items-center gap-2">
         <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-base shadow-lg shadow-teal-500/30">💰</div>
@@ -1070,7 +1091,11 @@
               </div>
               <div class="flex gap-3 pt-1">
                 <button type="button" @click="modalConta=false" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
-                <button type="button" @click="criarConta" class="flex-1 bg-teal-500 hover:bg-teal-600 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-teal-500/20">Salvar</button>
+                <button type="button" @click="criarConta" :disabled="loadingConta"
+                  class="flex-1 bg-teal-500 hover:bg-teal-600 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                  <svg v-if="loadingConta" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                  <span>{{ loadingConta ? 'Salvando...' : 'Salvar' }}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1214,6 +1239,7 @@ const modalItem          = ref(false)
 const modalTransferencia = ref(false)
 const modalEditar        = ref(false)
 const modalAlertas       = ref(false)
+const appCarregando      = ref(true)
 const itemParaVenda      = ref(null)
 const contaParaDel       = ref(null)
 
@@ -1467,6 +1493,7 @@ onMounted(async () => {
   await items.carregar()
   await budgets.carregar()
   saldoExibido.value = accounts.saldoTotal
+  appCarregando.value = false
 })
 
 // ── Ações existentes
@@ -1485,8 +1512,9 @@ async function deletarConta() {
 }
 
 async function criarConta() {
+  if (!formConta.value.banco) { mostrarToast('⚠️ Selecione ou digite o banco'); return }
+  loadingConta.value = true
   try {
-    if (!formConta.value.banco) { mostrarToast('⚠️ Selecione ou digite o banco'); return }
     const saldo = parseMoeda(inputSaldo.value?.value || '0')
     await accounts.criar({
       nome:  formConta.value.banco,
@@ -1495,6 +1523,7 @@ async function criarConta() {
       cor:   formConta.value.cor || '#14b8a6',
     })
     await accounts.carregar()
+    await budgets.carregar()
     animarSaldo(accounts.saldoTotal)
     formConta.value = { banco: '', saldo: 0, cor: '#14b8a6' }
     if (inputSaldo.value) inputSaldo.value.value = ''
@@ -1503,6 +1532,8 @@ async function criarConta() {
   } catch (err) {
     console.error('Erro ao criar conta:', err)
     mostrarToast('❌ Erro ao criar conta')
+  } finally {
+    loadingConta.value = false
   }
 }
 
@@ -1556,6 +1587,7 @@ async function confirmarVenda() {
 }
 
 // ── ALERTAS DE ORÇAMENTO
+const loadingConta   = ref(false)
 const loadingAlerta  = ref(false)
 const inputValorAlerta = ref(null)
 const formAlerta = ref({ categoria: 'mercado' })
@@ -1837,4 +1869,7 @@ async function realizarTransferencia() {
 
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+.fade-loading-leave-active { transition: opacity 0.5s ease, transform 0.5s ease; }
+.fade-loading-leave-to     { opacity: 0; transform: scale(1.04); }
 </style>
