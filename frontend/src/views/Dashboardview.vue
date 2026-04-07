@@ -71,7 +71,11 @@
           </div>
 
           <!-- ── BOTÕES LADO A LADO ── -->
-          <div class="relative z-10 grid grid-cols-2 gap-2">
+          <div class="relative z-10 grid grid-cols-3 gap-2">
+            <button @click="modalAlertas=true"
+              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
+              <span class="text-lg group-hover:scale-125 transition-transform">🔔</span> Alertas
+            </button>
             <button @click="modalTransferencia=true"
               class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
               <span class="text-lg group-hover:scale-125 transition-transform">🔄</span> Transferir
@@ -127,6 +131,61 @@
           <p class="text-3xl mb-2">🏦</p>
           <p class="text-gray-500 text-sm mb-3">Nenhuma conta ainda</p>
           <button @click="modalConta=true" class="text-teal-400 text-sm font-semibold hover:underline">+ Adicionar conta</button>
+        </div>
+
+
+        <!-- ── ALERTAS DE ORÇAMENTO ── -->
+        <div v-if="budgets.budgets.filter(b=>b.ativo).length > 0">
+          <!-- Alertas ultrapassados (vermelho) -->
+          <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual >= b.limite)" :key="'alerta-'+b.id"
+            class="bg-[#13161f] rounded-2xl border border-red-500/30 overflow-hidden mb-3">
+            <div class="px-4 py-3 flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center text-base flex-shrink-0">
+                {{ emojiCat[b.categoria] || '⚠️' }}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-0.5">
+                  <p class="text-sm font-bold text-red-400">🚨 Limite ultrapassado!</p>
+                  <span class="text-xs bg-red-500/15 text-red-400 px-2 py-0.5 rounded-full font-semibold">{{ labelCat[b.categoria] || b.categoria }}</span>
+                </div>
+                <p class="text-xs text-gray-400">
+                  Você gastou <span class="text-red-400 font-black tabular-nums">{{ formatar(b.gastoAtual) }}</span>
+                  de <span class="text-gray-300 font-semibold tabular-nums">{{ formatar(b.limite) }}</span> este mês
+                </p>
+                <div class="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div class="h-full rounded-full bg-red-500 transition-all duration-700"
+                    :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
+                </div>
+              </div>
+              <button @click="modalAlertas=true" class="text-gray-600 hover:text-gray-400 text-xs flex-shrink-0">⚙️</button>
+            </div>
+          </div>
+
+          <!-- Alertas de aviso (amarelo, 70%-99%) -->
+          <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual >= b.limite*0.7 && b.gastoAtual < b.limite)" :key="'aviso-'+b.id"
+            class="bg-[#13161f] rounded-2xl border border-amber-500/30 overflow-hidden mb-3">
+            <div class="px-4 py-3 flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center text-base flex-shrink-0">
+                {{ emojiCat[b.categoria] || '⚠️' }}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-0.5">
+                  <p class="text-sm font-bold text-amber-400">⚠️ Atenção!</p>
+                  <span class="text-xs bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full font-semibold">{{ labelCat[b.categoria] || b.categoria }}</span>
+                </div>
+                <p class="text-xs text-gray-400">
+                  Você gastou <span class="text-amber-400 font-black tabular-nums">{{ formatar(b.gastoAtual) }}</span>
+                  de <span class="text-gray-300 font-semibold tabular-nums">{{ formatar(b.limite) }}</span> este mês
+                  <span class="text-amber-500">({{ Math.round((b.gastoAtual/b.limite)*100) }}%)</span>
+                </p>
+                <div class="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div class="h-full rounded-full bg-amber-500 transition-all duration-700"
+                    :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
+                </div>
+              </div>
+              <button @click="modalAlertas=true" class="text-gray-600 hover:text-gray-400 text-xs flex-shrink-0">⚙️</button>
+            </div>
+          </div>
         </div>
 
         <div v-if="items.itens.filter(i=>i.status==='disponivel').length > 0"
@@ -480,6 +539,120 @@
       </div>
 
   
+    <!-- MODAL ALERTAS DE ORÇAMENTO -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <div v-if="modalAlertas" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
+          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
+            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
+              <div class="w-10 h-1 rounded-full bg-white/20"></div>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10 border-b border-white/5">
+              <h3 class="font-black text-base">🔔 Alertas de Orçamento</h3>
+              <button @click="modalAlertas=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
+            </div>
+
+            <!-- Form: novo alerta -->
+            <div class="px-5 pt-4 pb-3 border-b border-white/5">
+              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">Definir limite por categoria</p>
+
+              <!-- Seleção de categoria -->
+              <div class="grid grid-cols-4 gap-2 mb-3">
+                <button v-for="cat in categoriasSaida" :key="cat.id"
+                  @click="formAlerta.categoria=cat.id"
+                  :class="formAlerta.categoria===cat.id?'border-amber-500 bg-amber-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
+                  class="flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all active:scale-[0.97]">
+                  <span class="text-base">{{ cat.emoji }}</span>
+                  <span class="text-[10px] text-gray-400 font-semibold leading-tight text-center">{{ cat.label }}</span>
+                </button>
+              </div>
+
+              <!-- Valor limite -->
+              <div class="flex gap-2 items-center">
+                <input ref="inputValorAlerta" @input="mascaraMoeda" type="text" inputmode="numeric"
+                  placeholder="R$ 0,00"
+                  class="flex-1 bg-white/5 border border-white/10 text-amber-400 text-xl font-black text-center px-4 py-3 rounded-2xl outline-none focus:border-amber-500 transition-all font-mono placeholder:text-gray-700" />
+                <button @click="salvarAlerta"
+                  :disabled="loadingAlerta"
+                  class="bg-amber-500 hover:bg-amber-600 text-white font-black px-5 py-3 rounded-2xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
+                  <svg v-if="loadingAlerta" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                  <span v-if="!loadingAlerta">{{ budgets.budgets.find(b=>b.categoria===formAlerta.categoria) ? 'Atualizar' : 'Criar' }}</span>
+                  <span v-else>...</span>
+                </button>
+              </div>
+              <p v-if="formAlerta.categoria" class="mt-2 text-xs text-gray-600">
+                Alerta para: <span class="text-amber-400 font-semibold">{{ labelCat[formAlerta.categoria] }}</span>
+                <span v-if="budgets.budgets.find(b=>b.categoria===formAlerta.categoria)" class="text-gray-600">
+                  — limite atual: {{ formatar(budgets.budgets.find(b=>b.categoria===formAlerta.categoria)?.limite || 0) }}
+                </span>
+              </p>
+            </div>
+
+            <!-- Lista de alertas configurados -->
+            <div class="px-5 py-4">
+              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">
+                Alertas configurados
+                <span class="text-gray-700 ml-1">({{ budgets.budgets.length }})</span>
+              </p>
+
+              <div v-if="budgets.budgets.length === 0" class="py-8 text-center">
+                <p class="text-3xl mb-2">🔕</p>
+                <p class="text-gray-600 text-sm">Nenhum alerta configurado ainda.</p>
+              </div>
+
+              <div class="space-y-2">
+                <div v-for="b in budgets.budgets" :key="b.id"
+                  class="flex items-center gap-3 bg-white/3 border border-white/8 rounded-2xl px-4 py-3">
+
+                  <!-- Ícone e nome -->
+                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0"
+                    :class="b.gastoAtual >= b.limite ? 'bg-red-500/15' : b.gastoAtual >= b.limite*0.7 ? 'bg-amber-500/15' : 'bg-teal-500/15'">
+                    {{ emojiCat[b.categoria] || '📦' }}
+                  </div>
+
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1">
+                      <p class="text-sm font-semibold">{{ labelCat[b.categoria] || b.categoria }}</p>
+                      <span class="text-xs tabular-nums font-black"
+                        :class="b.gastoAtual >= b.limite ? 'text-red-400' : b.gastoAtual >= b.limite*0.7 ? 'text-amber-400' : 'text-teal-400'">
+                        {{ formatar(b.gastoAtual) }} / {{ formatar(b.limite) }}
+                      </span>
+                    </div>
+                    <!-- Barra de progresso -->
+                    <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-700"
+                        :class="b.gastoAtual >= b.limite ? 'bg-red-500' : b.gastoAtual >= b.limite*0.7 ? 'bg-amber-500' : 'bg-teal-500'"
+                        :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-0.5 tabular-nums">{{ Math.round((b.gastoAtual/b.limite)*100) }}% do limite</p>
+                  </div>
+
+                  <!-- Toggle ativo + Deletar -->
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <button @click="toggleAlerta(b)"
+                      :class="b.ativo?'bg-teal-500/20 text-teal-400':'bg-white/5 text-gray-600'"
+                      class="w-8 h-8 flex items-center justify-center rounded-xl transition-all text-sm hover:scale-110">
+                      {{ b.ativo ? '🔔' : '🔕' }}
+                    </button>
+                    <button @click="budgets.deletar(b.id).then(()=>mostrarToast('🗑️ Alerta removido'))"
+                      class="w-8 h-8 flex items-center justify-center rounded-xl text-gray-700 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm">✕</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="px-5 pb-6">
+              <button @click="modalAlertas=false"
+                class="w-full bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+
     <!-- MODAL EDITAR TRANSAÇÃO -->
     <Teleport to="body">
       <Transition name="slide-up">
@@ -1014,10 +1187,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useAuthStore }         from '../stores/auth'
 import { useAccountsStore }     from '../stores/accounts'
 import { useTransactionsStore } from '../stores/transactions'
+import { useBudgetsStore }     from '../stores/budgets'
 import { useItemsStore }        from '../stores/items'
 import { useCurrency }          from '../composables/useCurrency'
 
@@ -1025,6 +1199,7 @@ const auth     = useAuthStore()
 const accounts = useAccountsStore()
 const tx       = useTransactionsStore()
 const items    = useItemsStore()
+const budgets  = useBudgetsStore()
 const { mascaraMoeda, parseMoeda, formatar, formatarParaInput } = useCurrency()
 
 // ── Navegação
@@ -1038,6 +1213,7 @@ const modalConta         = ref(false)
 const modalItem          = ref(false)
 const modalTransferencia = ref(false)
 const modalEditar        = ref(false)
+const modalAlertas       = ref(false)
 const itemParaVenda      = ref(null)
 const contaParaDel       = ref(null)
 
@@ -1289,6 +1465,7 @@ onMounted(async () => {
   await accounts.carregar()
   await tx.carregar()
   await items.carregar()
+  await budgets.carregar()
   saldoExibido.value = accounts.saldoTotal
 })
 
@@ -1376,6 +1553,39 @@ async function confirmarVenda() {
   animarSaldo(accounts.saldoTotal)
   itemParaVenda.value = null
   mostrarToast('✅ Venda registrada!')
+}
+
+// ── ALERTAS DE ORÇAMENTO
+const loadingAlerta  = ref(false)
+const inputValorAlerta = ref(null)
+const formAlerta = ref({ categoria: 'mercado' })
+
+watch(
+  () => formAlerta.value.categoria,
+  (cat) => {
+    const b = budgets.budgets.find(b => b.categoria === cat)
+    nextTick(() => {
+      if (inputValorAlerta.value)
+        inputValorAlerta.value.value = b ? formatarParaInput(b.limite) : ''
+    })
+  }
+)
+
+async function salvarAlerta() {
+  const limite = parseMoeda(inputValorAlerta.value?.value || '0')
+  if (!limite || limite <= 0) { mostrarToast('⚠️ Informe um valor limite'); return }
+  loadingAlerta.value = true
+  try {
+    await budgets.salvar({ categoria: formAlerta.value.categoria, limite })
+    mostrarToast('✅ Alerta salvo!')
+    if (inputValorAlerta.value) inputValorAlerta.value.value = ''
+  } catch { mostrarToast('❌ Erro ao salvar alerta') }
+  finally { loadingAlerta.value = false }
+}
+
+async function toggleAlerta(b) {
+  await budgets.atualizar(b.id, { ativo: !b.ativo })
+  mostrarToast(b.ativo ? '🔕 Alerta pausado' : '🔔 Alerta ativado')
 }
 
 // ── EDITAR TRANSAÇÃO
