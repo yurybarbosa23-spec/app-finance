@@ -719,12 +719,36 @@
                 class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
             </div>
 
+            <!-- Preview da transferência -->
+            <div v-if="previewTransferencia" class="mx-5 mb-4 p-4 rounded-2xl bg-white/4 border border-white/8">
+              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">Resumo</p>
+              <div class="flex items-center gap-2">
+                <div class="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
+                  <p class="text-xs text-gray-500 mb-0.5">De</p>
+                  <p class="text-sm font-bold truncate" :style="{color: previewTransferencia.corOrigem}">{{ previewTransferencia.nomeOrigem }}</p>
+                  <p class="text-xs text-gray-500 tabular-nums">{{ formatar(previewTransferencia.saldoOrigem) }}</p>
+                </div>
+                <div class="flex flex-col items-center gap-1 flex-shrink-0">
+                  <span class="text-teal-400 font-black text-xs tabular-nums">{{ formatar(previewTransferencia.valor) }}</span>
+                  <svg width="24" height="12" viewBox="0 0 24 12" fill="none"><path d="M0 6h20M15 1l5 5-5 5" stroke="#2dd4bf" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
+                  <p class="text-xs text-gray-500 mb-0.5">Para</p>
+                  <p class="text-sm font-bold truncate" :style="{color: previewTransferencia.corDestino}">{{ previewTransferencia.nomeDestino }}</p>
+                  <p class="text-xs text-gray-400 tabular-nums truncate">{{ previewTransferencia.emailDestino || '' }}</p>
+                </div>
+              </div>
+            </div>
+
             <!-- Confirmar -->
             <div class="px-5 pb-6">
               <button @click="realizarTransferencia"
+                :disabled="loadingTransferencia"
                 :class="formTransf.tipo==='propria'?'bg-teal-500 hover:bg-teal-600 shadow-teal-500/30':'bg-blue-500 hover:bg-blue-600 shadow-blue-500/30'"
-                class="w-full py-4 rounded-2xl font-black text-base shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                🔄 Confirmar Transferência
+                class="w-full py-4 rounded-2xl font-black text-base shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50">
+                <svg v-if="loadingTransferencia" class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                <span v-if="!loadingTransferencia">🔄 Confirmar Transferência</span>
+                <span v-else>Processando...</span>
               </button>
             </div>
           </div>
@@ -1329,31 +1353,70 @@ async function selecionarUsuarioDestino(usuario) {
   }
 }
 
+const loadingTransferencia = ref(false)
+
+const previewTransferencia = computed(() => {
+  const valor = parseMoeda(inputValorTransf.value?.value || '0')
+  if (!valor || !formTransf.value.contaOrigemId) return null
+  const origem = accounts.contas.find(c => c.id === formTransf.value.contaOrigemId)
+  if (!origem) return null
+  if (formTransf.value.tipo === 'propria') {
+    const destino = accounts.contas.find(c => c.id === formTransf.value.contaDestinoId)
+    if (!destino) return null
+    return {
+      valor,
+      nomeOrigem:   origem.banco  || origem.nome,
+      corOrigem:    origem.cor    || '#2dd4bf',
+      saldoOrigem:  origem.saldo,
+      nomeDestino:  destino.banco || destino.nome,
+      corDestino:   destino.cor   || '#3b82f6',
+      emailDestino: null,
+    }
+  } else {
+    const usuario  = usuariosEncontrados.value.find(u => u.id === formTransf.value.usuarioDestinoId)
+    const contaExt = contasUsuarioDestino.value.find(c => c.id === formTransf.value.contaExternaId)
+    if (!usuario || !contaExt) return null
+    return {
+      valor,
+      nomeOrigem:   origem.banco   || origem.nome,
+      corOrigem:    origem.cor     || '#2dd4bf',
+      saldoOrigem:  origem.saldo,
+      nomeDestino:  contaExt.banco || contaExt.nome,
+      corDestino:   '#3b82f6',
+      emailDestino: usuario.email,
+    }
+  }
+})
+
 async function realizarTransferencia() {
   const valor = parseMoeda(inputValorTransf.value?.value || '0')
-  if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  if (!valor || valor <= 0)            { mostrarToast('⚠️ Informe um valor'); return }
   if (!formTransf.value.contaOrigemId) { mostrarToast('⚠️ Selecione a conta de origem'); return }
 
   const contaOrigem = accounts.contas.find(c => c.id === formTransf.value.contaOrigemId)
-  if (!contaOrigem) { mostrarToast('⚠️ Conta de origem não encontrada'); return }
+  if (!contaOrigem)                      { mostrarToast('⚠️ Conta de origem não encontrada'); return }
   if (Number(contaOrigem.saldo) < valor) { mostrarToast('❌ Saldo insuficiente'); return }
 
-  if (formTransf.value.tipo === 'propria') {
-    if (!formTransf.value.contaDestinoId) { mostrarToast('⚠️ Selecione a conta destino'); return }
-    if (formTransf.value.contaOrigemId === formTransf.value.contaDestinoId) {
-      mostrarToast('⚠️ Origem e destino não podem ser iguais'); return
-    }
-    const contaDestino = accounts.contas.find(c => c.id === formTransf.value.contaDestinoId)
-    const descSaida    = formTransf.value.descricao || `Transferência → ${contaDestino?.banco}`
-    const descEntrada  = formTransf.value.descricao || `Transferência ← ${contaOrigem.banco}`
-    await tx.criar({ tipo: 'despesa', categoria: 'transferencia', descricao: descSaida,   valor, data: hoje(), accountId: formTransf.value.contaOrigemId })
-    await tx.criar({ tipo: 'receita', categoria: 'transferencia', descricao: descEntrada, valor, data: hoje(), accountId: formTransf.value.contaDestinoId })
-  } else {
-    if (!formTransf.value.usuarioDestinoId) { mostrarToast('⚠️ Selecione o usuário destino'); return }
-    if (!formTransf.value.contaExternaId)   { mostrarToast('⚠️ Selecione a conta do destinatário'); return }
-    try {
+  loadingTransferencia.value = true
+  try {
+    if (formTransf.value.tipo === 'propria') {
+      if (!formTransf.value.contaDestinoId) { mostrarToast('⚠️ Selecione a conta destino'); return }
+      if (formTransf.value.contaOrigemId === formTransf.value.contaDestinoId) {
+        mostrarToast('⚠️ Origem e destino não podem ser iguais'); return
+      }
+      const contaDestino = accounts.contas.find(c => c.id === formTransf.value.contaDestinoId)
+      const base         = formTransf.value.descricao ? `${formTransf.value.descricao} · ` : ''
+      const nomeOrigem   = contaOrigem.banco  || contaOrigem.nome
+      const nomeDestino  = contaDestino?.banco || contaDestino?.nome || 'destino'
+      const descSaida    = `${base}Transferência → ${nomeDestino}`
+      const descEntrada  = `${base}Transferência ← ${nomeOrigem}`
+      await tx.criar({ tipo: 'despesa', categoria: 'transferencia', descricao: descSaida,   valor, data: hoje(), accountId: formTransf.value.contaOrigemId })
+      await tx.criar({ tipo: 'receita', categoria: 'transferencia', descricao: descEntrada, valor, data: hoje(), accountId: formTransf.value.contaDestinoId })
+    } else {
+      if (!formTransf.value.usuarioDestinoId) { mostrarToast('⚠️ Selecione o usuário destino'); return }
+      if (!formTransf.value.contaExternaId)   { mostrarToast('⚠️ Selecione a conta do destinatário'); return }
       const res = await fetch('/api/transfers', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.token}` },
         body: JSON.stringify({
           contaOrigemId:  formTransf.value.contaOrigemId,
@@ -1363,13 +1426,18 @@ async function realizarTransferencia() {
         }),
       })
       if (!res.ok) { const d = await res.json(); mostrarToast('❌ ' + (d.erro || 'Erro na transferência')); return }
-    } catch { mostrarToast('❌ Erro de conexão'); return }
+      await tx.carregar()
+    }
+    await accounts.carregar()
+    animarSaldo(accounts.saldoTotal)
+    fecharTransferencia()
+    mostrarToast('✅ Transferência realizada!')
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro inesperado. Tente novamente.')
+  } finally {
+    loadingTransferencia.value = false
   }
-
-  await accounts.carregar()
-  animarSaldo(accounts.saldoTotal)
-  fecharTransferencia()
-  mostrarToast('✅ Transferência realizada!')
 }
 </script>
 

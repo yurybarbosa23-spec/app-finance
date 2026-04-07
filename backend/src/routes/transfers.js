@@ -2,7 +2,7 @@
 const express        = require('express')
 const router         = express.Router()
 const authMiddleware = require('../middlewares/auth')
-const { Account, Transaction, sequelize } = require('../models')
+const { Account, Transaction, User, sequelize } = require('../models')
 
 // POST /api/transfers — transferência entre contas de usuários diferentes
 router.post('/', authMiddleware, async (req, res) => {
@@ -14,10 +14,12 @@ router.post('/', authMiddleware, async (req, res) => {
   const t = await sequelize.transaction()
 
   try {
+    // ✅ inclui User para ter o nome do remetente
     const contaOrigem = await Account.findOne({
-      where: { id: contaOrigemId, userId: req.userId },
+      where:       { id: contaOrigemId, userId: req.userId },
+      include:     [{ model: User, attributes: ['nome'] }],
       transaction: t,
-      lock: true,
+      lock:        true,
     })
 
     if (!contaOrigem) {
@@ -30,9 +32,11 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ erro: 'Saldo insuficiente' })
     }
 
+    // ✅ inclui User para ter o nome do destinatário
     const contaDestino = await Account.findByPk(contaDestinoId, {
+      include:     [{ model: User, attributes: ['nome'] }],
       transaction: t,
-      lock: true,
+      lock:        true,
     })
 
     if (!contaDestino) {
@@ -53,20 +57,28 @@ router.post('/', authMiddleware, async (req, res) => {
     const hoje = new Date().toISOString().split('T')[0]
     const desc = descricao || 'Transferência'
 
+    // ✅ usa nome do usuário + banco na descrição
+    const nomeDestinatario = contaDestino.User?.nome   || contaDestino.banco || contaDestino.nome
+    const bancoDestino     = contaDestino.banco        || contaDestino.nome
+    const nomeRemetente    = contaOrigem.User?.nome    || contaOrigem.banco  || contaOrigem.nome
+    const bancoOrigem      = contaOrigem.banco         || contaOrigem.nome
+
+    // Histórico do remetente: "Transferência → João (Nubank)"
     await Transaction.create({
       tipo:      'despesa',
       categoria: 'transferencia',
-      descricao: `${desc} → ${contaDestino.banco || contaDestino.nome}`,
+      descricao: `${desc} → ${nomeDestinatario} (${bancoDestino})`,
       valor:     Number(valor),
       data:      hoje,
       accountId: contaOrigem.id,
       userId:    req.userId,
     }, { transaction: t })
 
+    // Histórico do destinatário: "Transferência ← Maria (Itaú)"
     await Transaction.create({
       tipo:      'receita',
       categoria: 'transferencia',
-      descricao: `${desc} ← ${contaOrigem.banco || contaOrigem.nome}`,
+      descricao: `${desc} ← ${nomeRemetente} (${bancoOrigem})`,
       valor:     Number(valor),
       data:      hoje,
       accountId: contaDestino.id,
