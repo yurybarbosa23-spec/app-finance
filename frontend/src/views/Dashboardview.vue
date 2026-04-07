@@ -1,26 +1,7 @@
 <template>
   <div class="min-h-screen bg-[#0b0d12] text-white flex flex-col">
 
-    <!-- TELA DE LOADING GLOBAL -->
-    <Transition name="fade-loading">
-      <div v-if="appCarregando" class="fixed inset-0 bg-[#0b0d12] z-[999] flex flex-col items-center justify-center gap-6">
-        <div class="relative">
-          <div class="w-20 h-20 rounded-3xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-4xl shadow-2xl shadow-teal-500/40">💰</div>
-          <div class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-teal-500 flex items-center justify-center">
-            <svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-          </div>
-        </div>
-        <div class="text-center">
-          <p class="font-black text-xl tracking-tight text-white">FinanceApp</p>
-          <p class="text-gray-500 text-sm mt-1">Carregando seus dados...</p>
-        </div>
-        <div class="flex gap-1.5 mt-2">
-          <div class="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style="animation-delay:0ms"></div>
-          <div class="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style="animation-delay:150ms"></div>
-          <div class="w-2 h-2 rounded-full bg-teal-500 animate-bounce" style="animation-delay:300ms"></div>
-        </div>
-      </div>
-    </Transition>
+
 
     <header class="bg-[#0b0d12]/95 backdrop-blur-lg border-b border-white/5 px-5 h-14 flex items-center justify-between sticky top-0 z-40">
       <div class="flex items-center gap-2">
@@ -776,6 +757,45 @@
       </Transition>
     </Teleport>
 
+
+    <!-- ══════════════════════════════════════════════════════
+         LOADING GLOBAL (cobre tela inteira via Teleport)
+    ══════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <!-- Loading inicial ao dar F5 -->
+      <Transition name="vf-loading">
+        <div v-if="appCarregando"
+          style="position:fixed;inset:0;background:#0b0d12;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;">
+          <div style="position:relative;">
+            <div style="width:80px;height:80px;border-radius:24px;background:linear-gradient(135deg,#14b8a6,#06b6d4);display:flex;align-items:center;justify-content:center;font-size:36px;box-shadow:0 0 40px rgba(20,184,166,0.4);">💰</div>
+            <div style="position:absolute;bottom:-4px;right:-4px;width:24px;height:24px;background:#14b8a6;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+              <svg class="vf-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            </div>
+          </div>
+          <div style="text-align:center;">
+            <p style="font-weight:900;font-size:20px;color:white;letter-spacing:-0.5px;">FinanceApp</p>
+            <p style="color:#6b7280;font-size:14px;margin-top:4px;">Carregando seus dados...</p>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <div class="vf-dot" style="animation-delay:0ms;"></div>
+            <div class="vf-dot" style="animation-delay:160ms;"></div>
+            <div class="vf-dot" style="animation-delay:320ms;"></div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Loading de operação (criar conta, salvar, etc.) -->
+      <Transition name="vf-loading">
+        <div v-if="loadingGlobal"
+          style="position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(8px);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+          <div style="background:#13161f;border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:32px 40px;display:flex;flex-direction:column;align-items:center;gap:16px;box-shadow:0 24px 64px rgba(0,0,0,0.6);">
+            <svg class="vf-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            <p style="color:white;font-weight:800;font-size:15px;">{{ loadingMsg }}</p>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
   </main>
 
     <nav class="fixed bottom-0 left-0 right-0 bg-[#0d0f15]/98 backdrop-blur-xl border-t border-white/5 z-40">
@@ -1240,6 +1260,8 @@ const modalTransferencia = ref(false)
 const modalEditar        = ref(false)
 const modalAlertas       = ref(false)
 const appCarregando      = ref(true)
+const loadingGlobal      = ref(false)
+const loadingMsg         = ref('Carregando...')
 const itemParaVenda      = ref(null)
 const contaParaDel       = ref(null)
 
@@ -1486,6 +1508,10 @@ function fmtData(d) {
   return `${day}/${m}/${y}`
 }
 
+// ── Loading global helper
+function mostrarLoading(msg = 'Carregando...') { loadingMsg.value = msg; loadingGlobal.value = true }
+function ocultarLoading() { loadingGlobal.value = false }
+
 // ── Lifecycle
 onMounted(async () => {
   await accounts.carregar()
@@ -1514,6 +1540,7 @@ async function deletarConta() {
 async function criarConta() {
   if (!formConta.value.banco) { mostrarToast('⚠️ Selecione ou digite o banco'); return }
   loadingConta.value = true
+  mostrarLoading('Criando conta...')
   try {
     const saldo = parseMoeda(inputSaldo.value?.value || '0')
     await accounts.criar({
@@ -1534,10 +1561,12 @@ async function criarConta() {
     mostrarToast('❌ Erro ao criar conta')
   } finally {
     loadingConta.value = false
+    ocultarLoading()
   }
 }
 
 async function criarTransacao() {
+  mostrarLoading('Salvando lançamento...')
   if (!formTx.value.accountId) { mostrarToast('⚠️ Selecione uma conta'); return }
   const valor = parseMoeda(inputValor.value?.value || '0')
   if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
@@ -1872,4 +1901,14 @@ async function realizarTransferencia() {
 
 .fade-loading-leave-active { transition: opacity 0.5s ease, transform 0.5s ease; }
 .fade-loading-leave-to     { opacity: 0; transform: scale(1.04); }
+
+/* Loading global */
+@keyframes vf-spin  { to { transform: rotate(360deg); } }
+@keyframes vf-bounce { 0%,80%,100% { transform:translateY(0); } 40% { transform:translateY(-8px); } }
+.vf-spin  { animation: vf-spin 0.8s linear infinite; }
+.vf-dot   { width:8px; height:8px; border-radius:50%; background:#14b8a6; animation: vf-bounce 1.2s ease-in-out infinite; }
+.vf-loading-enter-active { transition: opacity 0.15s ease; }
+.vf-loading-leave-active { transition: opacity 0.4s ease; }
+.vf-loading-enter-from,
+.vf-loading-leave-to     { opacity: 0; }
 </style>
