@@ -1566,7 +1566,6 @@ async function criarConta() {
 }
 
 async function criarTransacao() {
-  mostrarLoading('Salvando lançamento...')
   if (!formTx.value.accountId) { mostrarToast('⚠️ Selecione uma conta'); return }
   const valor = parseMoeda(inputValor.value?.value || '0')
   if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
@@ -1575,14 +1574,23 @@ async function criarTransacao() {
     const cat = categoriasAtuais.value.find(c=>c.id===formTx.value.categoria)
     formTx.value.descricao = cat?.label || 'Lançamento'
   }
-  const contaAtual = formTx.value.accountId
-  await tx.criar({ ...formTx.value, valor, data: hoje() })
-  await accounts.carregar()
-  animarSaldo(accounts.saldoTotal)
-  if (inputValor.value) inputValor.value.value = ''
-  formTx.value = { descricao:'', valor:0, tipo:'despesa', categoria:'mercado', data:hoje(), accountId: contaAtual }
-  modalLancamento.value = false
-  mostrarToast(tipo==='receita'?'⬆️ Entrada registrada!':'⬇️ Saída registrada!')
+  mostrarLoading('Salvando lançamento...')
+  try {
+    const contaAtual = formTx.value.accountId
+    await tx.criar({ ...formTx.value, valor, data: hoje() })
+    await accounts.carregar()
+    await budgets.carregar()
+    animarSaldo(accounts.saldoTotal)
+    if (inputValor.value) inputValor.value.value = ''
+    formTx.value = { descricao:'', valor:0, tipo:'despesa', categoria:'mercado', data:hoje(), accountId: contaAtual }
+    modalLancamento.value = false
+    mostrarToast(tipo==='receita'?'⬆️ Entrada registrada!':'⬇️ Saída registrada!')
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro ao salvar lançamento.')
+  } finally {
+    ocultarLoading()
+  }
 }
 
 async function criarItem() {
@@ -1636,12 +1644,16 @@ async function salvarAlerta() {
   const limite = parseMoeda(inputValorAlerta.value?.value || '0')
   if (!limite || limite <= 0) { mostrarToast('⚠️ Informe um valor limite'); return }
   loadingAlerta.value = true
+  mostrarLoading('Salvando alerta...')
   try {
     await budgets.salvar({ categoria: formAlerta.value.categoria, limite })
     mostrarToast('✅ Alerta salvo!')
     if (inputValorAlerta.value) inputValorAlerta.value.value = ''
   } catch { mostrarToast('❌ Erro ao salvar alerta') }
-  finally { loadingAlerta.value = false }
+  finally {
+    loadingAlerta.value = false
+    ocultarLoading()
+  }
 }
 
 async function toggleAlerta(b) {
