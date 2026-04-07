@@ -405,7 +405,7 @@
                 </p>
                 <button @click="abrirEditar(t)"
                   class="opacity-0 group-hover:opacity-100 text-gray-700 hover:text-teal-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-teal-500/10 transition-all text-sm">✏️</button>
-                <button @click="tx.deletar(t.id).then(()=>mostrarToast('🗑️ Removido'))"
+                <button @click="tx.deletar(t.id).then(()=>{ mostrarToast('🗑️ Removido'); budgets.carregar() })"
                   class="opacity-0 group-hover:opacity-100 text-gray-700 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-red-500/10 transition-all text-sm">✕</button>
               </div>
             </div>
@@ -1518,6 +1518,7 @@ async function criarTransacao() {
   const contaAtual = formTx.value.accountId
   await tx.criar({ ...formTx.value, valor, data: hoje() })
   await accounts.carregar()
+  await budgets.carregar()   // ← adiciona essa linha
   animarSaldo(accounts.saldoTotal)
   if (inputValor.value) inputValor.value.value = ''
   formTx.value = { descricao:'', valor:0, tipo:'despesa', categoria:'mercado', data:hoje(), accountId: contaAtual }
@@ -1633,6 +1634,7 @@ async function salvarEdicao() {
       accountId:  formEditar.value.accountId,
     })
     await accounts.carregar()
+    await budgets.carregar()   // ← adiciona essa linha
     animarSaldo(accounts.saldoTotal)
     modalEditar.value = false
     mostrarToast('✅ Transação atualizada!')
@@ -1802,6 +1804,7 @@ async function realizarTransferencia() {
       await tx.carregar()
     }
     await accounts.carregar()
+    await budgets.carregar()   // ← adiciona essa linha
     animarSaldo(accounts.saldoTotal)
     fecharTransferencia()
     mostrarToast('✅ Transferência realizada!')
