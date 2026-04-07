@@ -19,11 +19,11 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, from, next) => {
+// ✅ Forma nova (sem warnings)
+router.beforeEach((to) => {
   const auth = useAuthStore()
-  if (to.meta.requiresAuth  && !auth.logado)   return next('/login')
-  if (to.meta.requiresAdmin && !auth.isAdmin)  return next('/dashboard')
-  next()
+  if (to.meta.requiresAuth && !auth.logado) return '/login'
+  if (to.meta.requiresAdmin && !auth.isAdmin) return '/dashboard'
 })
 
 export default router

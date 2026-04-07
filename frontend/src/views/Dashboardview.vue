@@ -344,6 +344,8 @@
                 <p :class="t.tipo==='receita'?'text-green-400':'text-red-400'" class="text-sm font-black tabular-nums">
                   {{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}
                 </p>
+                <button @click="abrirEditar(t)"
+                  class="opacity-0 group-hover:opacity-100 text-gray-700 hover:text-teal-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-teal-500/10 transition-all text-sm">✏️</button>
                 <button @click="tx.deletar(t.id).then(()=>mostrarToast('🗑️ Removido'))"
                   class="opacity-0 group-hover:opacity-100 text-gray-700 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-red-500/10 transition-all text-sm">✕</button>
               </div>
@@ -477,7 +479,110 @@
         </div>
       </div>
 
-    </main>
+  
+    <!-- MODAL EDITAR TRANSAÇÃO -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <div v-if="modalEditar" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
+          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
+            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
+              <div class="w-10 h-1 rounded-full bg-white/20"></div>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10">
+              <h3 class="font-black text-base">✏️ Editar Transação</h3>
+              <button @click="modalEditar=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
+            </div>
+
+            <!-- Tipo -->
+            <div class="px-5 mb-4">
+              <div class="flex bg-white/5 rounded-2xl p-1 gap-1">
+                <button @click="formEditar.tipo='receita'; formEditar.categoria='salario'"
+                  :class="formEditar.tipo==='receita'?'bg-green-500 text-white shadow-lg shadow-green-500/20':'text-gray-500 hover:text-gray-300'"
+                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬆️ Entrada</button>
+                <button @click="formEditar.tipo='despesa'; formEditar.categoria='mercado'"
+                  :class="formEditar.tipo==='despesa'?'bg-red-500 text-white shadow-lg shadow-red-500/20':'text-gray-500 hover:text-gray-300'"
+                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬇️ Saída</button>
+              </div>
+            </div>
+
+            <!-- Categorias -->
+            <div class="px-5 mb-4">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Categoria</p>
+              <div class="grid grid-cols-4 gap-2">
+                <button v-for="cat in (formEditar.tipo==='receita' ? categoriasEntrada : categoriasSaida)" :key="cat.id"
+                  @click="formEditar.categoria=cat.id"
+                  :class="formEditar.categoria===cat.id?'border-teal-500 bg-teal-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
+                  class="flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all active:scale-[0.97]">
+                  <span class="text-base">{{ cat.emoji }}</span>
+                  <span class="text-[10px] text-gray-400 font-semibold">{{ cat.label }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Conta -->
+            <div class="px-5 mb-4">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Conta</p>
+              <div class="space-y-2">
+                <button v-for="c in accounts.contas" :key="c.id"
+                  @click="formEditar.accountId=c.id"
+                  :class="formEditar.accountId===c.id?'border-teal-500 bg-teal-500/10':'border-white/8 bg-white/3 hover:border-white/15'"
+                  class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
+                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
+                    :style="{background: c.cor+'22', color: c.cor}">
+                    {{ c.banco.charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="flex-1 text-left">
+                    <p class="text-sm font-semibold">{{ c.banco }}</p>
+                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
+                  </div>
+                  <div v-if="formEditar.accountId===c.id" class="text-teal-400 font-black text-sm">✓</div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Valor -->
+            <div class="px-5 mb-3">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Valor</p>
+              <input ref="inputValorEditar" @input="mascaraMoeda" type="text" inputmode="numeric"
+                placeholder="R$ 0,00"
+                class="w-full bg-white/5 border border-white/10 text-teal-400 text-3xl font-black text-center px-4 py-4 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono placeholder:text-gray-700" />
+            </div>
+
+            <!-- Descrição -->
+            <div class="px-5 mb-3">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Descrição</p>
+              <input v-model="formEditar.descricao" type="text" placeholder="Descrição..."
+                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
+            </div>
+
+            <!-- Data -->
+            <div class="px-5 mb-5">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Data</p>
+              <input v-model="formEditar.data" type="date"
+                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
+            </div>
+
+            <!-- Salvar -->
+            <div class="px-5 pb-6 flex gap-3">
+              <button @click="modalEditar=false"
+                class="flex-1 bg-white/5 hover:bg-white/10 py-4 rounded-2xl text-sm font-semibold transition-all">
+                Cancelar
+              </button>
+              <button @click="salvarEdicao"
+                :disabled="loadingEditar"
+                :class="formEditar.tipo==='receita'?'bg-green-500 hover:bg-green-600 shadow-green-500/20':'bg-teal-500 hover:bg-teal-600 shadow-teal-500/20'"
+                class="flex-1 py-4 rounded-2xl font-black text-base shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2">
+                <svg v-if="loadingEditar" class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                <span v-if="!loadingEditar">✅ Salvar</span>
+                <span v-else>Salvando...</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+  </main>
 
     <nav class="fixed bottom-0 left-0 right-0 bg-[#0d0f15]/98 backdrop-blur-xl border-t border-white/5 z-40">
       <div class="max-w-3xl mx-auto flex items-center justify-around px-3 py-2">
@@ -932,6 +1037,7 @@ const modalLancamento    = ref(false)
 const modalConta         = ref(false)
 const modalItem          = ref(false)
 const modalTransferencia = ref(false)
+const modalEditar        = ref(false)
 const itemParaVenda      = ref(null)
 const contaParaDel       = ref(null)
 
@@ -940,7 +1046,8 @@ const inputValor      = ref(null)
 const inputSaldo      = ref(null)
 const inputValorItem  = ref(null)
 const inputValorVenda = ref(null)
-const inputValorTransf = ref(null)
+const inputValorTransf  = ref(null)
+const inputValorEditar  = ref(null)
 
 // ── Animação saldo
 const saldoExibido  = ref(0)
@@ -1269,6 +1376,62 @@ async function confirmarVenda() {
   animarSaldo(accounts.saldoTotal)
   itemParaVenda.value = null
   mostrarToast('✅ Venda registrada!')
+}
+
+// ── EDITAR TRANSAÇÃO
+const loadingEditar = ref(false)
+const formEditar = ref({
+  id:          null,
+  descricao:   '',
+  valor:       0,
+  tipo:        'despesa',
+  categoria:   'mercado',
+  data:        '',
+  accountId:   '',
+})
+
+function abrirEditar(transacao) {
+  formEditar.value = {
+    id:        transacao.id,
+    descricao: transacao.descricao || '',
+    valor:     Number(transacao.valor),
+    tipo:      transacao.tipo,
+    categoria: transacao.categoria,
+    data:      transacao.data,
+    accountId: transacao.accountId,
+  }
+  modalEditar.value = true
+  nextTick(() => {
+    if (inputValorEditar.value)
+      inputValorEditar.value.value = formatarParaInput(Number(transacao.valor))
+  })
+}
+
+async function salvarEdicao() {
+  const valor = parseMoeda(inputValorEditar.value?.value || '0')
+  if (!valor || valor <= 0)      { mostrarToast('⚠️ Informe um valor'); return }
+  if (!formEditar.value.accountId) { mostrarToast('⚠️ Selecione uma conta'); return }
+
+  loadingEditar.value = true
+  try {
+    await tx.editar(formEditar.value.id, {
+      descricao:  formEditar.value.descricao || formEditar.value.categoria,
+      valor,
+      tipo:       formEditar.value.tipo,
+      categoria:  formEditar.value.categoria,
+      data:       formEditar.value.data || hoje(),
+      accountId:  formEditar.value.accountId,
+    })
+    await accounts.carregar()
+    animarSaldo(accounts.saldoTotal)
+    modalEditar.value = false
+    mostrarToast('✅ Transação atualizada!')
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro ao salvar. Tente novamente.')
+  } finally {
+    loadingEditar.value = false
+  }
 }
 
 // ── TRANSFERÊNCIA

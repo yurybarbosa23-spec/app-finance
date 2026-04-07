@@ -3,9 +3,9 @@ const { Transaction, Account } = require('../models')
 async function listar(req, res) {
   try {
     const tx = await Transaction.findAll({
-      where: { userId: req.userId },
+      where:   { userId: req.userId },
       include: [{ model: Account, attributes: ['banco', 'nome', 'cor'] }],
-      order: [['createdAt', 'DESC']],
+      order:   [['createdAt', 'DESC']],
     })
     res.json(tx)
   } catch (err) {
@@ -25,7 +25,7 @@ async function criar(req, res) {
     await conta.save()
 
     const tx = await Transaction.create({
-      descricao, valor, tipo, categoria, data, accountId, userId: req.userId
+      descricao, valor, tipo, categoria, data, accountId, userId: req.userId,
     })
     res.status(201).json(tx)
   } catch (err) {
@@ -34,34 +34,57 @@ async function criar(req, res) {
   }
 }
 
-async function atualizar(req, res) {
+async function editar(req, res) {
   try {
     const tx = await Transaction.findOne({ where: { id: req.params.id, userId: req.userId } })
     if (!tx) return res.status(404).json({ erro: 'Transação não encontrada' })
 
-    const conta = await Account.findByPk(tx.accountId)
-    if (!conta) return res.status(404).json({ erro: 'Conta não encontrada' })
+    const { descricao, valor, tipo, categoria, data, accountId } = req.body
 
-    // Reverte o efeito da transação original no saldo
-    conta.saldo = tx.tipo === 'receita'
-      ? Number(conta.saldo) - Number(tx.valor)
-      : Number(conta.saldo) + Number(tx.valor)
+    const novoValor    = Number(valor)
+    const antigoValor  = Number(tx.valor)
+    const antigoTipo   = tx.tipo
+    const antigoContaId = tx.accountId
+    const novoContaId  = accountId || antigoContaId
 
-    // Aplica o novo valor no saldo
-    const novoTipo  = req.body.tipo  || tx.tipo
-    const novoValor = req.body.valor !== undefined ? Number(req.body.valor) : Number(tx.valor)
+    const contaAntiga = await Account.findOne({ where: { id: antigoContaId, userId: req.userId } })
+    if (!contaAntiga) return res.status(404).json({ erro: 'Conta original não encontrada' })
 
-    conta.saldo = novoTipo === 'receita'
-      ? Number(conta.saldo) + novoValor
-      : Number(conta.saldo) - novoValor
+    // Reverte o efeito da transação antiga na conta antiga
+    contaAntiga.saldo = antigoTipo === 'receita'
+      ? Number(contaAntiga.saldo) - antigoValor
+      : Number(contaAntiga.saldo) + antigoValor
+    await contaAntiga.save()
 
-    await conta.save()
-    await tx.update(req.body)
+    // Se mudou de conta, aplica na conta nova; senão reutiliza a mesma
+    let contaNova = contaAntiga
+    if (novoContaId !== antigoContaId) {
+      contaNova = await Account.findOne({ where: { id: novoContaId, userId: req.userId } })
+      if (!contaNova) {
+        // Desfaz reversão e retorna erro
+        contaAntiga.saldo = antigoTipo === 'receita'
+          ? Number(contaAntiga.saldo) + antigoValor
+          : Number(contaAntiga.saldo) - antigoValor
+        await contaAntiga.save()
+        return res.status(404).json({ erro: 'Nova conta não encontrada' })
+      }
+    }
 
-    res.json(tx)
+    // Aplica o efeito da nova transação na conta nova
+    contaNova.saldo = tipo === 'receita'
+      ? Number(contaNova.saldo) + novoValor
+      : Number(contaNova.saldo) - novoValor
+    await contaNova.save()
+
+    await tx.update({ descricao, valor: novoValor, tipo, categoria, data, accountId: novoContaId })
+
+    const txAtualizada = await Transaction.findByPk(tx.id, {
+      include: [{ model: Account, attributes: ['banco', 'nome', 'cor'] }],
+    })
+    res.json(txAtualizada)
   } catch (err) {
     console.error(err)
-    res.status(500).json({ erro: 'Erro ao atualizar transação' })
+    res.status(500).json({ erro: 'Erro ao editar transação' })
   }
 }
 
@@ -84,4 +107,4 @@ async function deletar(req, res) {
   }
 }
 
-module.exports = { listar, criar, atualizar, deletar }
+module.exports = { listar, criar, editar, deletar }
