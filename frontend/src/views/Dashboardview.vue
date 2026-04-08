@@ -1239,6 +1239,8 @@ import { useTransactionsStore } from '../stores/transactions'
 import { useBudgetsStore }     from '../stores/budgets'
 import { useItemsStore }        from '../stores/items'
 import { useCurrency }          from '../composables/useCurrency'
+import api from '../services/api'
+
 
 const auth     = useAuthStore()
 const accounts = useAccountsStore()
@@ -1770,11 +1772,10 @@ function debounceUsuarios() {
   buscandoUsuarios.value = true
   debounceTimerTransf = setTimeout(async () => {
     try {
-      const res  = await fetch(`/api/auth/search?q=${encodeURIComponent(buscaUsuario.value)}`, {
-        headers: { 'Authorization': `Bearer ${auth.token}` },
+      const { data } = await api.get('/auth/search', {
+        params: { q: buscaUsuario.value }
       })
-      const data = await res.json()
-      usuariosEncontrados.value = data.filter(u => u.id !== auth.id)
+      usuariosEncontrados.value = data.filter(u => u.id !== auth.user?.id)
     } catch {
       usuariosEncontrados.value = []
     } finally {
@@ -1788,10 +1789,7 @@ async function selecionarUsuarioDestino(usuario) {
   formTransf.value.contaExternaId   = ''
   contasUsuarioDestino.value         = []
   try {
-    const res  = await fetch(`/api/accounts/user/${usuario.id}`, {
-      headers: { 'Authorization': `Bearer ${auth.token}` },
-    })
-    const data = await res.json()
+    const { data } = await api.get(`/accounts/user/${usuario.id}`)
     contasUsuarioDestino.value = data
     if (data.length === 1) formTransf.value.contaExternaId = data[0].id
   } catch {
