@@ -849,25 +849,9 @@ async function realizarTransferenciaStep() {
   }
 }
 
-const usuariosDestino = computed(() => {
-  const q = buscaUsuario.value.trim().toLowerCase()
-  // Com query ativa: usar resultado do debounce (usuariosEncontrados) ou filtrar recentes
-  if (q) {
-    return usuariosEncontrados.value.length > 0
-      ? usuariosEncontrados.value
-      : usuariosRecentes.value.filter(u =>
-          u.nome.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-        )
-  }
-  // Sem query: mostrar todos os recentes
-  return usuariosRecentes.value
-})
 
-const contasOrigemTransf = computed(() =>
-  formTransf.value.tipo === 'propria'
-    ? accounts.contas.filter(c => c.id !== formTransf.value.contaDestinoId)
-    : accounts.contas
-)
+
+
 
 // ── Steps modais
 const passoLancamento    = ref(1)
@@ -1327,7 +1311,7 @@ const contasOrigemTransf = computed(() =>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div v-for="conta in accounts.contas" :key="conta.id"
             class="bg-[#13161f] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-all group relative overflow-hidden">
-            <div class="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl" :style="{backgroundColor:conta.cor}"></div>
+            <div class="absolute top-0 left-0 right-0 h-0.5 rounded-2xl" :style="{backgroundColor:conta.cor}"></div>
             <div class="flex items-center justify-between mb-5">
               <div class="flex items-center gap-3">
                 <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-xl font-black"
