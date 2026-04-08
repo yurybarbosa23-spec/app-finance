@@ -708,7 +708,6 @@ const usuariosRecentes = ref([])
 const buscandoRecentes = ref(false)
 
 async function carregarTodosUsuarios() {
-  // Busca feita conforme digitação — sem pré-carregamento para não limitar resultados
   buscandoRecentes.value = false
 }
 
@@ -1565,10 +1564,12 @@ const contasOrigemTransf = computed(() =>
     <!-- ═══════════════════════════════════ -->
     <Teleport to="body">
       <Transition name="modal-fade">
-        <div v-if="modalLancamento"
-          class="fixed inset-x-0 top-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="height:100dvh"
-          @click.self="fecharLancamentoStep">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col" style="max-height:90dvh">
+        <div
+          data-modal="lancamento"
+          style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.82);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem;"
+          @click.self="fecharLancamentoStep"
+        >
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col" style="max-height:90dvh;overflow:hidden;display:flex;flex-direction:column;">
 
             <!-- Header -->
             <div class="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
@@ -1701,10 +1702,12 @@ const contasOrigemTransf = computed(() =>
     <!-- ════════════════════════════════════ -->
     <Teleport to="body">
       <Transition name="modal-fade">
-        <div v-if="modalTransferencia"
-          class="fixed inset-x-0 top-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="height:100dvh"
-          @click.self="fecharTransferenciaStep">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col" style="max-height:90dvh">
+        <div
+          data-modal="transferencia"
+          style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.82);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem;"
+          @click.self="fecharTransferenciaStep"
+        >
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col" style="max-height:90dvh;overflow:hidden;display:flex;flex-direction:column;">
 
             <!-- Header -->
             <div class="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
@@ -2266,20 +2269,24 @@ const contasOrigemTransf = computed(() =>
 </template>
 
 <style scoped>
-.modal-fade-enter-active,
-.modal-fade-leave-active { transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
-.modal-fade-enter-from,
-.modal-fade-leave-to     { opacity: 0; transform: scale(0.96); }
-
-.toast-slide-enter-active,
-.toast-slide-leave-active { transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
-.toast-slide-enter-from   { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-.toast-slide-leave-to     { opacity: 0; transform: translateX(-50%) translateY(-8px); }
-
-.fade-enter-active,
-.fade-leave-active { transition: opacity 0.2s ease; }
-.fade-enter-from,
-.fade-leave-to     { opacity: 0; }
-
-.tabular-nums { font-variant-numeric: tabular-nums; }
+[data-modal="lancamento"],
+[data-modal="transferencia"] {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 100dvh !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 1rem !important;
+  z-index: 9999 !important;
+  bottom: auto !important;
+}
+[data-modal="lancamento"] > *:first-child,
+[data-modal="transferencia"] > *:first-child {
+  max-height: 90dvh !important;
+  width: min(100%, 28rem) !important;
+  margin: 0 auto !important;
+}
 </style>
