@@ -51,6 +51,7 @@ const inputValorItem  = ref(null)
 const inputValorVenda = ref(null)
 const inputValorTransf  = ref(null)
 const inputValorEditar  = ref(null)
+const valorLancamentoGuardado = ref(0)
 
 // ── Animação saldo
 const saldoExibido  = ref(0)
@@ -103,6 +104,8 @@ function setValorRapido(val) {
   if (!inputValor.value) return
   const novo = Math.round((parseMoeda(inputValor.value.value || '0') + val) * 100) / 100
   inputValor.value.value = formatarParaInput(novo)
+  formTx.value.valor = novo
+  valorLancamentoGuardado.value = novo
 }
 
 // ── Categorias
@@ -368,7 +371,7 @@ async function criarConta() {
 
 async function criarTransacao() {
   if (!formTx.value.accountId) { mostrarToast('⚠️ Selecione uma conta'); return }
-  const valor = parseMoeda(inputValor.value?.value || '0')
+  const valor = Number(formTx.value.valor || valorLancamentoGuardado.value || parseMoeda(inputValor.value?.value || '0'))
   if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
   const tipo = formTx.value.tipo
   if (!formTx.value.descricao) {
@@ -383,6 +386,7 @@ async function criarTransacao() {
     await budgets.carregar()
     animarSaldo(accounts.saldoTotal)
     if (inputValor.value) inputValor.value.value = ''
+    valorLancamentoGuardado.value = 0
     formTx.value = { descricao:'', valor:0, tipo:'despesa', categoria:'mercado', data:hoje(), accountId: contaAtual }
     modalLancamento.value = false
     mostrarToast(tipo==='receita'?'⬆️ Entrada registrada!':'⬇️ Saída registrada!')
@@ -711,12 +715,15 @@ async function carregarTodosUsuarios() {
 function fecharLancamentoStep() {
   modalLancamento.value = false
   passoLancamento.value = 1
+  valorLancamentoGuardado.value = 0
   formTx.value = { descricao:'', valor:0, tipo:'despesa', categoria:'mercado', data:hoje(), accountId:'' }
   if (inputValor.value) inputValor.value.value = ''
 }
 
 function selecionarTipoLancamento(tipo) {
   formTx.value.tipo = tipo
+  formTx.value.valor = 0
+  valorLancamentoGuardado.value = 0
   formTx.value.categoria = tipo === 'receita' ? 'salario' : 'mercado'
   passoLancamento.value = 2
 }
@@ -730,6 +737,8 @@ function selecionarCategoriaStep(catId) {
 function confirmarValorLancamento() {
   const valor = parseMoeda(inputValor.value?.value || '0')
   if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  formTx.value.valor = valor
+  valorLancamentoGuardado.value = valor
   if (accounts.contas.length === 1) {
     formTx.value.accountId = accounts.contas[0].id
     criarTransacao()
