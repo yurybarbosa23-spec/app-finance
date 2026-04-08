@@ -1232,7 +1232,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useAuthStore }         from '../stores/auth'
 import { useAccountsStore }     from '../stores/accounts'
 import { useTransactionsStore } from '../stores/transactions'
@@ -1515,6 +1515,8 @@ function mostrarLoading(msg = 'Carregando...') { loadingMsg.value = msg; loading
 function ocultarLoading() { loadingGlobal.value = false }
 
 // ── Lifecycle
+let pollingInterval = null
+
 onMounted(async () => {
   await accounts.carregar()
   await tx.carregar()
@@ -1522,6 +1524,20 @@ onMounted(async () => {
   await budgets.carregar()
   saldoExibido.value = accounts.saldoTotal
   appCarregando.value = false
+
+  // Atualiza saldo e transações a cada 15 segundos em background
+  pollingInterval = setInterval(async () => {
+    const saldoAntes = accounts.saldoTotal
+    await accounts.carregar()
+    await tx.carregar()
+    if (accounts.saldoTotal !== saldoAntes) {
+      animarSaldo(accounts.saldoTotal)
+    }
+  }, 15000)
+})
+
+onUnmounted(() => {
+  clearInterval(pollingInterval)
 })
 
 // ── Ações existentes
