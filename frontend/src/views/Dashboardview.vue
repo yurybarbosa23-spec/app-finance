@@ -1566,10 +1566,9 @@ const contasOrigemTransf = computed(() =>
     <Teleport to="body">
       <Transition name="modal-fade">
         <div v-if="modalLancamento"
-          class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 overflow-y-auto"
+          class="fixed inset-x-0 top-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="height:100dvh"
           @click.self="fecharLancamentoStep">
-          <div class="flex min-h-full items-center justify-center p-4">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col" style="max-height:90dvh">
 
             <!-- Header -->
             <div class="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
@@ -1703,10 +1702,9 @@ const contasOrigemTransf = computed(() =>
     <Teleport to="body">
       <Transition name="modal-fade">
         <div v-if="modalTransferencia"
-          class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 overflow-y-auto"
+          class="fixed inset-x-0 top-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="height:100dvh"
           @click.self="fecharTransferenciaStep">
-          <div class="flex min-h-full items-center justify-center p-4">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col" style="max-height:90dvh">
 
             <!-- Header -->
             <div class="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
