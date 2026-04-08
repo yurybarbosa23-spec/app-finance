@@ -699,7 +699,8 @@ async function realizarTransferencia() {
 
 // ── Steps modais
 const passoLancamento  = ref(1)
-const passoTransf      = ref(1)
+const passoTransf        = ref(1)
+const valorTransfGuardado  = ref(0)   // guarda o valor entre passos (input fica oculto)
 const usuariosRecentes = ref([])
 const buscandoRecentes = ref(false)
 
@@ -759,6 +760,7 @@ function abrirTransferenciaStep() {
 function fecharTransferenciaStep() {
   fecharTransferencia()
   passoTransf.value = 1
+  valorTransfGuardado.value = 0
 }
 
 function selecionarTipoTransf(tipo) {
@@ -792,12 +794,61 @@ function selecionarContaExternaStep(contaId) {
 function confirmarValorTransf() {
   const valor = parseMoeda(inputValorTransf.value?.value || '0')
   if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  valorTransfGuardado.value = valor   // salva antes de trocar de passo (input vai sumir)
   passoTransf.value = formTransf.value.tipo === 'propria' ? 4 : 5
 }
 
 async function realizarTransferenciaStep() {
-  await realizarTransferencia()
-  if (!modalTransferencia.value) passoTransf.value = 1
+  // O inputValorTransf está null aqui pois o input ficou no passo anterior (v-if oculto)
+  // Usamos valorTransfGuardado que foi salvo em confirmarValorTransf()
+  const valor = valorTransfGuardado.value
+  if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  if (!formTransf.value.contaOrigemId) { mostrarToast('⚠️ Selecione a conta de origem'); return }
+
+  const contaOrigem = accounts.contas.find(c => c.id === formTransf.value.contaOrigemId)
+  if (!contaOrigem)                      { mostrarToast('⚠️ Conta não encontrada'); return }
+  if (Number(contaOrigem.saldo) < valor) { mostrarToast('❌ Saldo insuficiente'); return }
+
+  loadingTransferencia.value = true
+  try {
+    if (formTransf.value.tipo === 'propria') {
+      if (!formTransf.value.contaDestinoId) { mostrarToast('⚠️ Selecione a conta destino'); return }
+      if (formTransf.value.contaOrigemId === formTransf.value.contaDestinoId) {
+        mostrarToast('⚠️ Origem e destino iguais'); return
+      }
+      const contaDestino = accounts.contas.find(c => c.id === formTransf.value.contaDestinoId)
+      const base        = formTransf.value.descricao ? `${formTransf.value.descricao} · ` : ''
+      const nomeOrigem  = contaOrigem.banco  || contaOrigem.nome
+      const nomeDestino = contaDestino?.banco || contaDestino?.nome || 'destino'
+      await tx.criar({ tipo:'despesa', categoria:'transferencia', descricao:`${base}Transferência → ${nomeDestino}`, valor, data:hoje(), accountId: formTransf.value.contaOrigemId })
+      await tx.criar({ tipo:'receita', categoria:'transferencia', descricao:`${base}Transferência ← ${nomeOrigem}`,  valor, data:hoje(), accountId: formTransf.value.contaDestinoId })
+    } else {
+      if (!formTransf.value.usuarioDestinoId) { mostrarToast('⚠️ Selecione o usuário'); return }
+      if (!formTransf.value.contaExternaId)   { mostrarToast('⚠️ Selecione a conta do destinatário'); return }
+      let erroTransf = null
+      try {
+        await api.post('/transfers', {
+          contaOrigemId:  Number(formTransf.value.contaOrigemId),
+          contaDestinoId: Number(formTransf.value.contaExternaId),
+          valor,
+          descricao: formTransf.value.descricao || 'Transferência',
+        })
+      } catch (errApi) {
+        erroTransf = errApi.response?.data?.erro || 'Erro na transferência'
+      }
+      if (erroTransf) { mostrarToast('❌ ' + erroTransf); return }
+      await tx.carregar()
+    }
+    await accounts.carregar()
+    animarSaldo(accounts.saldoTotal)
+    fecharTransferenciaStep()
+    mostrarToast('✅ Transferência realizada!')
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro inesperado. Tente novamente.')
+  } finally {
+    loadingTransferencia.value = false
+  }
 }
 
 const usuariosDestino = computed(() => {
