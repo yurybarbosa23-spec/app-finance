@@ -724,7 +724,7 @@ function selecionarTipoLancamento(tipo) {
 function selecionarCategoriaStep(catId) {
   formTx.value.categoria = catId
   passoLancamento.value = 3
-  nextTick(() => { if (inputValor.value) inputValor.value.focus() })
+  // teclado só abre ao tocar no campo
 }
 
 function confirmarValorLancamento() {
@@ -771,7 +771,7 @@ function selecionarTipoTransf(tipo) {
 function selecionarContaDestinoStep(contaId) {
   formTransf.value.contaDestinoId = contaId
   passoTransf.value = 3
-  nextTick(() => { if (inputValorTransf.value) inputValorTransf.value.focus() })
+  // teclado só abre ao tocar no campo
 }
 
 async function selecionarUsuarioStep(usuario) {
@@ -782,7 +782,7 @@ async function selecionarUsuarioStep(usuario) {
 function selecionarContaExternaStep(contaId) {
   formTransf.value.contaExternaId = contaId
   passoTransf.value = 4
-  nextTick(() => { if (inputValorTransf.value) inputValorTransf.value.focus() })
+  // teclado só abre ao tocar no campo
 }
 
 function confirmarValorTransf() {
