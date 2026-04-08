@@ -26,6 +26,16 @@ const navItems = [
   { val:'investimentos', icon:'📦', label:'Itens'     },
 ]
 
+
+// ── Navegação items
+const navItems = [
+  { val:'inicio',        icon:'🏠', label:'Início'    },
+  { val:'contas',        icon:'🏦', label:'Contas'    },
+  { val:'historico',     icon:'📋', label:'Histórico' },
+  { val:'metricas',      icon:'📊', label:'Métricas'  },
+  { val:'investimentos', icon:'📦', label:'Itens'     },
+]
+
 // ── Navegação
 const aba             = ref('inicio')
 const subAbaInv       = ref('venda')
@@ -574,14 +584,7 @@ function debounceUsuarios() {
       const { data } = await api.get('/auth/search', {
         params: { q: buscaUsuario.value }
       })
-      const filtrados = data.filter(u => u.id !== auth.user?.id)
-      usuariosEncontrados.value = filtrados
-      // Merge em recentes para aparecer na lista inicial também
-      filtrados.forEach(u => {
-        if (!usuariosRecentes.value.find(r => r.id === u.id)) {
-          usuariosRecentes.value.push(u)
-        }
-      })
+      usuariosEncontrados.value = data.filter(u => u.id !== auth.user?.id)
     } catch {
       usuariosEncontrados.value = []
     } finally {
@@ -705,13 +708,8 @@ const usuariosRecentes = ref([])
 const buscandoRecentes = ref(false)
 
 async function carregarTodosUsuarios() {
-  if (usuariosRecentes.value.length > 0) return
-  buscandoRecentes.value = true
-  try {
-    const { data } = await api.get('/auth/search', { params: { q: 'a' } })
-    usuariosRecentes.value = data.filter(u => u.id !== auth.user?.id)
-  } catch { usuariosRecentes.value = [] }
-  finally { buscandoRecentes.value = false }
+  // Busca feita conforme digitação — sem pré-carregamento para não limitar resultados
+  buscandoRecentes.value = false
 }
 
 function fecharLancamentoStep() {
@@ -871,6 +869,161 @@ const contasOrigemTransf = computed(() =>
     : accounts.contas
 )
 
+// ── Steps modais
+const passoLancamento    = ref(1)
+const passoTransf        = ref(1)
+const valorTransfGuardado = ref(0)
+const usuariosRecentes   = ref([])
+const buscandoRecentes   = ref(false)
+
+// Abre modal transferência (sem pré-carregamento para não limitar busca)
+function abrirTransferenciaStep() {
+  modalTransferencia.value = true
+  passoTransf.value = 1
+}
+
+function fecharLancamentoStep() {
+  modalLancamento.value = false
+  passoLancamento.value = 1
+  formTx.value = { descricao:'', valor:0, tipo:'despesa', categoria:'mercado', data:hoje(), accountId:'' }
+  if (inputValor.value) inputValor.value.value = ''
+}
+
+function selecionarTipoLancamento(tipo) {
+  formTx.value.tipo = tipo
+  formTx.value.categoria = tipo === 'receita' ? 'salario' : 'mercado'
+  passoLancamento.value = 2
+}
+
+function selecionarCategoriaStep(catId) {
+  formTx.value.categoria = catId
+  passoLancamento.value = 3
+  nextTick(() => { if (inputValor.value) inputValor.value.focus() })
+}
+
+function confirmarValorLancamento() {
+  const valor = parseMoeda(inputValor.value?.value || '0')
+  if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  if (accounts.contas.length === 1) {
+    formTx.value.accountId = accounts.contas[0].id
+    criarTransacao()
+    passoLancamento.value = 1
+  } else {
+    passoLancamento.value = 4
+  }
+}
+
+async function criarTransacaoStep() {
+  if (!formTx.value.accountId) { mostrarToast('⚠️ Selecione uma conta'); return }
+  await criarTransacao()
+  passoLancamento.value = 1
+}
+
+function fecharTransferenciaStep() {
+  fecharTransferencia()
+  passoTransf.value = 1
+  valorTransfGuardado.value = 0
+}
+
+function selecionarTipoTransf(tipo) {
+  formTransf.value.tipo = tipo
+  formTransf.value.contaOrigemId    = ''
+  formTransf.value.contaDestinoId   = ''
+  formTransf.value.usuarioDestinoId = ''
+  formTransf.value.contaExternaId   = ''
+  buscaUsuario.value = ''
+  usuariosEncontrados.value = []
+  passoTransf.value = 2
+}
+
+function selecionarContaDestinoStep(contaId) {
+  formTransf.value.contaDestinoId = contaId
+  passoTransf.value = 3
+  nextTick(() => { if (inputValorTransf.value) inputValorTransf.value.focus() })
+}
+
+async function selecionarUsuarioStep(usuario) {
+  await selecionarUsuarioDestino(usuario)
+  passoTransf.value = 3
+}
+
+function selecionarContaExternaStep(contaId) {
+  formTransf.value.contaExternaId = contaId
+  passoTransf.value = 4
+  nextTick(() => { if (inputValorTransf.value) inputValorTransf.value.focus() })
+}
+
+function confirmarValorTransf() {
+  const valor = parseMoeda(inputValorTransf.value?.value || '0')
+  if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  valorTransfGuardado.value = valor  // salva antes do input sumir com v-if
+  passoTransf.value = formTransf.value.tipo === 'propria' ? 4 : 5
+}
+
+// Usa valorTransfGuardado pois inputValorTransf está null no último passo (v-if oculto)
+async function realizarTransferenciaStep() {
+  const valor = valorTransfGuardado.value
+  if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  if (!formTransf.value.contaOrigemId) { mostrarToast('⚠️ Selecione a conta de origem'); return }
+
+  const contaOrigem = accounts.contas.find(c => c.id === formTransf.value.contaOrigemId)
+  if (!contaOrigem)                      { mostrarToast('⚠️ Conta não encontrada'); return }
+  if (Number(contaOrigem.saldo) < valor) { mostrarToast('❌ Saldo insuficiente'); return }
+
+  loadingTransferencia.value = true
+  try {
+    if (formTransf.value.tipo === 'propria') {
+      if (!formTransf.value.contaDestinoId) { mostrarToast('⚠️ Selecione a conta destino'); return }
+      if (formTransf.value.contaOrigemId === formTransf.value.contaDestinoId) {
+        mostrarToast('⚠️ Origem e destino não podem ser iguais'); return
+      }
+      const contaDestino = accounts.contas.find(c => c.id === formTransf.value.contaDestinoId)
+      const base        = formTransf.value.descricao ? `${formTransf.value.descricao} · ` : ''
+      const nomeOrigem  = contaOrigem.banco  || contaOrigem.nome
+      const nomeDestino = contaDestino?.banco || contaDestino?.nome || 'destino'
+      await tx.criar({ tipo:'despesa', categoria:'transferencia', descricao:`${base}Transferência → ${nomeDestino}`, valor, data:hoje(), accountId: formTransf.value.contaOrigemId })
+      await tx.criar({ tipo:'receita', categoria:'transferencia', descricao:`${base}Transferência ← ${nomeOrigem}`,  valor, data:hoje(), accountId: formTransf.value.contaDestinoId })
+    } else {
+      if (!formTransf.value.usuarioDestinoId) { mostrarToast('⚠️ Selecione o usuário'); return }
+      if (!formTransf.value.contaExternaId)   { mostrarToast('⚠️ Selecione a conta do destinatário'); return }
+      let erroTransf = null
+      try {
+        await api.post('/transfers', {
+          contaOrigemId:  Number(formTransf.value.contaOrigemId),
+          contaDestinoId: Number(formTransf.value.contaExternaId),
+          valor,
+          descricao: formTransf.value.descricao || 'Transferência',
+        })
+      } catch (errApi) {
+        erroTransf = errApi.response?.data?.erro || 'Erro na transferência'
+      }
+      if (erroTransf) { mostrarToast('❌ ' + erroTransf); return }
+      await tx.carregar()
+    }
+    await accounts.carregar()
+    animarSaldo(accounts.saldoTotal)
+    fecharTransferenciaStep()
+    mostrarToast('✅ Transferência realizada!')
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro inesperado. Tente novamente.')
+  } finally {
+    loadingTransferencia.value = false
+  }
+}
+
+// Busca de usuários: usa API com a query digitada (mínimo 2 chars)
+const usuariosDestino = computed(() => {
+  const q = buscaUsuario.value.trim()
+  return q.length >= 2 ? usuariosEncontrados.value : []
+})
+
+const contasOrigemTransf = computed(() =>
+  formTransf.value.tipo === 'propria'
+    ? accounts.contas.filter(c => c.id !== formTransf.value.contaDestinoId)
+    : accounts.contas
+)
+
 </script>
 
 <template>
@@ -929,14 +1082,11 @@ const contasOrigemTransf = computed(() =>
       <div class="flex-1 p-4 space-y-1 overflow-y-auto">
         <p class="text-[10px] text-gray-600 font-black uppercase tracking-widest px-3 mb-3">Menu</p>
         <button v-for="item in navItems" :key="item.val" @click="aba = item.val"
-          :class="aba === item.val
-            ? 'bg-teal-500/10 border-teal-500/30 text-teal-400'
-            : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'"
+          :class="aba === item.val ? 'bg-teal-500/10 border-teal-500/30 text-teal-400' : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'"
           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all">
           <span class="text-lg leading-none">{{ item.icon }}</span>
           {{ item.label }}
         </button>
-
         <div class="pt-4 border-t border-white/5 mt-4 space-y-1">
           <p class="text-[10px] text-gray-600 font-black uppercase tracking-widest px-3 mb-3">Ações Rápidas</p>
           <button @click="abrirTransferenciaStep()"
@@ -1405,23 +1555,20 @@ const contasOrigemTransf = computed(() =>
     <nav class="fixed bottom-0 left-0 right-0 lg:hidden bg-[#0e1017]/96 backdrop-blur-xl border-t border-white/5 z-40">
       <div class="flex items-center justify-around px-1 py-2 max-w-sm mx-auto" style="padding-bottom: max(8px, env(safe-area-inset-bottom))">
         <button v-for="item in navItems.slice(0,2)" :key="item.val" @click="aba = item.val"
-          :class="aba === item.val ? 'text-teal-400' : 'text-gray-600 hover:text-gray-400'"
+          :class="aba === item.val ? 'text-teal-400' : 'text-gray-600'"
           class="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[52px]">
           <span class="text-xl leading-none">{{ item.icon }}</span>
           <span class="text-[10px] font-semibold">{{ item.label }}</span>
         </button>
-
         <!-- FAB central -->
-        <button @click="modalLancamento = true; passoLancamento = 1"
-          class="flex flex-col items-center gap-0.5 -mt-5 px-1">
+        <button @click="modalLancamento = true; passoLancamento = 1" class="flex flex-col items-center gap-0.5 -mt-5 px-1">
           <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center shadow-xl shadow-teal-500/40 active:scale-95 transition-transform">
             <span class="text-2xl leading-none">⚡</span>
           </div>
           <span class="text-[10px] font-semibold text-teal-400 mt-0.5">Lançar</span>
         </button>
-
         <button v-for="item in navItems.slice(2,4)" :key="item.val" @click="aba = item.val"
-          :class="aba === item.val ? 'text-teal-400' : 'text-gray-600 hover:text-gray-400'"
+          :class="aba === item.val ? 'text-teal-400' : 'text-gray-600'"
           class="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[52px]">
           <span class="text-xl leading-none">{{ item.icon }}</span>
           <span class="text-[10px] font-semibold">{{ item.label }}</span>
@@ -1429,54 +1576,46 @@ const contasOrigemTransf = computed(() =>
       </div>
     </nav>
 
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- MODAL LANÇAMENTO — STEP BY STEP                            -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ═══════════════════════════════════ -->
+    <!-- MODAL LANÇAMENTO — STEP BY STEP    -->
+    <!-- ═══════════════════════════════════ -->
     <Teleport to="body">
-      <Transition name="modal-slide">
+      <Transition name="modal-fade">
         <div v-if="modalLancamento"
-          class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+          class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           @click.self="fecharLancamentoStep">
-
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl overflow-hidden flex flex-col">
-            <!-- Drag handle -->
-            <div class="flex justify-center pt-3 pb-0 sm:hidden flex-shrink-0">
-              <div class="w-10 h-1 rounded-full bg-white/15"></div>
-            </div>
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
 
             <!-- Header -->
-            <div class="flex items-center justify-between px-5 pt-4 pb-3 flex-shrink-0">
+            <div class="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
               <div class="flex items-center gap-2.5">
                 <button v-if="passoLancamento > 1" @click="passoLancamento--"
-                  class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white text-base font-bold transition-all flex-shrink-0">
-                  ‹
-                </button>
+                  class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white text-base font-bold transition-all flex-shrink-0">‹</button>
                 <div>
                   <h3 class="font-black text-sm leading-tight">⚡ Lançamento Rápido</h3>
-                  <p class="text-[10px] text-gray-500 leading-tight mt-0.5">
+                  <p class="text-[10px] text-gray-500 mt-0.5">
                     {{ passoLancamento === 1 ? 'Tipo' : passoLancamento === 2 ? 'Categoria' : passoLancamento === 3 ? 'Valor' : 'Conta' }}
                     · passo {{ passoLancamento }} de {{ accounts.contas.length > 1 ? 4 : 3 }}
                   </p>
                 </div>
               </div>
               <button @click="fecharLancamentoStep"
-                class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white transition-all flex-shrink-0">
+                class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white transition-all">
                 <span class="text-xs font-black">✕</span>
               </button>
             </div>
 
             <!-- Progress -->
-            <div class="h-[2px] bg-white/5 flex-shrink-0">
+            <div class="h-[2px] bg-white/5 flex-shrink-0 mx-5 rounded-full mb-1">
               <div class="h-full transition-all duration-500 rounded-full"
                 :class="formTx.tipo === 'receita' ? 'bg-emerald-500' : 'bg-red-500'"
                 :style="{width: (passoLancamento / (accounts.contas.length > 1 ? 4 : 3) * 100)+'%'}"></div>
             </div>
 
-            <div class="overflow-y-auto max-h-[75dvh]">
+            <div class="overflow-y-auto" style="max-height: min(75dvh, 520px)">
 
               <!-- PASSO 1: TIPO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoLancamento === 1" key="p1" class="p-5 space-y-3">
+              <div v-if="passoLancamento === 1" class="p-5 space-y-3">
                 <p class="text-xs text-gray-500 font-bold uppercase tracking-widest pb-1">O que deseja registrar?</p>
                 <button @click="selecionarTipoLancamento('receita')"
                   class="w-full flex items-center gap-4 p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/6 hover:bg-emerald-500/12 active:scale-[0.98] transition-all">
@@ -1497,36 +1636,27 @@ const contasOrigemTransf = computed(() =>
                   <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
                 </button>
               </div>
-              </Transition>
 
               <!-- PASSO 2: CATEGORIA -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoLancamento === 2" key="p2" class="p-5">
-                <div class="flex items-center gap-2 mb-4">
-                  <span class="text-xl">{{ formTx.tipo === 'receita' ? '⬆️' : '⬇️' }}</span>
-                  <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">
-                    {{ formTx.tipo === 'receita' ? 'Categoria da entrada' : 'Categoria da saída' }}
-                  </p>
-                </div>
+              <div v-if="passoLancamento === 2" class="p-5">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">
+                  {{ formTx.tipo === 'receita' ? '⬆️ Categoria da entrada' : '⬇️ Categoria da saída' }}
+                </p>
                 <div class="grid grid-cols-3 gap-2">
                   <button v-for="cat in categoriasAtuais" :key="cat.id"
                     @click="selecionarCategoriaStep(cat.id)"
                     :class="formTx.categoria === cat.id
-                      ? (formTx.tipo==='receita'
-                          ? 'border-emerald-500/60 bg-emerald-500/15 text-white'
-                          : 'border-red-500/60 bg-red-500/15 text-white')
-                      : 'border-white/8 bg-white/3 text-gray-400 hover:border-white/15 hover:bg-white/6'"
+                      ? (formTx.tipo==='receita' ? 'border-emerald-500/60 bg-emerald-500/15 text-white' : 'border-red-500/60 bg-red-500/15 text-white')
+                      : 'border-white/8 bg-white/3 text-gray-400 hover:border-white/15'"
                     class="flex flex-col items-center gap-1.5 p-3 rounded-2xl border transition-all active:scale-[0.94]">
                     <span class="text-2xl leading-none">{{ cat.emoji }}</span>
                     <span class="text-[11px] font-semibold text-center leading-tight">{{ cat.label }}</span>
                   </button>
                 </div>
               </div>
-              </Transition>
 
               <!-- PASSO 3: VALOR -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoLancamento === 3" key="p3" class="p-5 space-y-4">
+              <div v-if="passoLancamento === 3" class="p-5 space-y-4">
                 <div class="flex items-center gap-3 bg-white/3 rounded-2xl px-4 py-3">
                   <span class="text-2xl leading-none">{{ emojiCat[formTx.categoria] }}</span>
                   <div>
@@ -1552,18 +1682,14 @@ const contasOrigemTransf = computed(() =>
                 <input v-model="formTx.descricao" type="text" placeholder="Descrição (opcional)"
                   class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-white/20 transition-all text-sm placeholder:text-gray-700" />
                 <button @click="confirmarValorLancamento"
-                  :class="formTx.tipo==='receita'
-                    ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25'
-                    : 'bg-red-500 hover:bg-red-600 shadow-red-500/25'"
+                  :class="formTx.tipo==='receita' ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25' : 'bg-red-500 hover:bg-red-600 shadow-red-500/25'"
                   class="w-full py-4 rounded-2xl font-black text-sm text-white shadow-lg transition-all active:scale-[0.98]">
                   {{ accounts.contas.length > 1 ? 'Próximo → Escolher conta' : 'Confirmar Lançamento ✓' }}
                 </button>
               </div>
-              </Transition>
 
               <!-- PASSO 4: CONTA -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoLancamento === 4" key="p4" class="p-5 space-y-3">
+              <div v-if="passoLancamento === 4" class="p-5 space-y-3">
                 <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-3">Qual conta foi usada?</p>
                 <button v-for="c in accounts.contas" :key="c.id"
                   @click="formTx.accountId = c.id; criarTransacaoStep()"
@@ -1579,7 +1705,6 @@ const contasOrigemTransf = computed(() =>
                   <span class="text-gray-600 text-xl font-bold">›</span>
                 </button>
               </div>
-              </Transition>
 
             </div>
           </div>
@@ -1587,60 +1712,50 @@ const contasOrigemTransf = computed(() =>
       </Transition>
     </Teleport>
 
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- MODAL TRANSFERÊNCIA — STEP BY STEP                         -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- ════════════════════════════════════ -->
+    <!-- MODAL TRANSFERÊNCIA — STEP BY STEP  -->
+    <!-- ════════════════════════════════════ -->
     <Teleport to="body">
-      <Transition name="modal-slide">
+      <Transition name="modal-fade">
         <div v-if="modalTransferencia"
-          class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+          class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           @click.self="fecharTransferenciaStep">
-
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl overflow-hidden flex flex-col">
-            <!-- Drag handle -->
-            <div class="flex justify-center pt-3 pb-0 sm:hidden flex-shrink-0">
-              <div class="w-10 h-1 rounded-full bg-white/15"></div>
-            </div>
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
 
             <!-- Header -->
-            <div class="flex items-center justify-between px-5 pt-4 pb-3 flex-shrink-0">
+            <div class="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
               <div class="flex items-center gap-2.5">
                 <button v-if="passoTransf > 1" @click="passoTransf--; buscaUsuario=''; usuariosEncontrados=[]"
-                  class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white text-base font-bold transition-all flex-shrink-0">
-                  ‹
-                </button>
+                  class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white text-base font-bold transition-all flex-shrink-0">‹</button>
                 <div>
                   <h3 class="font-black text-sm leading-tight">🔄 Transferência</h3>
-                  <p class="text-[10px] text-gray-500 leading-tight mt-0.5">
+                  <p class="text-[10px] text-gray-500 mt-0.5">
                     {{ passoTransf === 1 ? 'Para onde?' :
                        passoTransf === 2 && formTransf.tipo === 'propria' ? 'Conta destino' :
-                       passoTransf === 2 && formTransf.tipo === 'externo' ? 'Destinatário' :
+                       passoTransf === 2 ? 'Destinatário' :
                        passoTransf === 3 && formTransf.tipo === 'propria' ? 'Valor' :
-                       passoTransf === 3 && formTransf.tipo === 'externo' ? 'Conta do destinatário' :
+                       passoTransf === 3 ? 'Conta do destinatário' :
                        passoTransf === 4 && formTransf.tipo === 'propria' ? 'Conta de origem' :
-                       passoTransf === 4 && formTransf.tipo === 'externo' ? 'Valor' :
-                       'Conta de origem' }}
-                    · passo {{ passoTransf }} de {{ formTransf.tipo === 'propria' ? 4 : (passoTransf < 2 ? 5 : 5) }}
+                       passoTransf === 4 ? 'Valor' : 'Conta de origem' }}
                   </p>
                 </div>
               </div>
               <button @click="fecharTransferenciaStep"
-                class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white transition-all flex-shrink-0">
+                class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white transition-all">
                 <span class="text-xs font-black">✕</span>
               </button>
             </div>
 
             <!-- Progress -->
-            <div class="h-[2px] bg-white/5 flex-shrink-0">
+            <div class="h-[2px] bg-white/5 flex-shrink-0 mx-5 rounded-full mb-1">
               <div class="h-full bg-blue-500 transition-all duration-500 rounded-full"
                 :style="{width: (passoTransf / (formTransf.tipo === 'propria' ? 4 : 5) * 100)+'%'}"></div>
             </div>
 
-            <div class="overflow-y-auto max-h-[78dvh]">
+            <div class="overflow-y-auto" style="max-height: min(78dvh, 540px)">
 
-              <!-- PASSO 1: TIPO DE DESTINO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 1" key="t1" class="p-5 space-y-3">
+              <!-- PASSO 1: TIPO -->
+              <div v-if="passoTransf === 1" class="p-5 space-y-3">
                 <p class="text-xs text-gray-500 font-bold uppercase tracking-widest pb-1">Para onde deseja transferir?</p>
                 <button @click="selecionarTipoTransf('propria')"
                   :disabled="accounts.contas.length < 2"
@@ -1648,7 +1763,7 @@ const contasOrigemTransf = computed(() =>
                   <div class="w-14 h-14 rounded-2xl bg-teal-500/12 flex items-center justify-center text-3xl flex-shrink-0">🔄</div>
                   <div class="text-left">
                     <p class="font-black text-teal-400 text-base">Minha conta</p>
-                    <p class="text-xs text-gray-500 mt-0.5">Transferir entre suas próprias contas</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Entre suas próprias contas</p>
                     <p v-if="accounts.contas.length < 2" class="text-[10px] text-yellow-500 mt-0.5">Requer ao menos 2 contas</p>
                   </div>
                   <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
@@ -1658,16 +1773,14 @@ const contasOrigemTransf = computed(() =>
                   <div class="w-14 h-14 rounded-2xl bg-blue-500/12 flex items-center justify-center text-3xl flex-shrink-0">👤</div>
                   <div class="text-left">
                     <p class="font-black text-blue-400 text-base">Outro usuário</p>
-                    <p class="text-xs text-gray-500 mt-0.5">Enviar para conta de outra pessoa</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Enviar para outra pessoa</p>
                   </div>
                   <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
                 </button>
               </div>
-              </Transition>
 
               <!-- PASSO 2 (propria): CONTA DESTINO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 2 && formTransf.tipo === 'propria'" key="t2p" class="p-5 space-y-2">
+              <div v-if="passoTransf === 2 && formTransf.tipo === 'propria'" class="p-5 space-y-2">
                 <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">Para qual conta?</p>
                 <button v-for="c in accounts.contas" :key="c.id"
                   @click="selecionarContaDestinoStep(c.id)"
@@ -1683,27 +1796,36 @@ const contasOrigemTransf = computed(() =>
                   <span class="text-gray-600 text-xl font-bold">›</span>
                 </button>
               </div>
-              </Transition>
 
-              <!-- PASSO 2 (externo): SELECIONAR USUÁRIO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 2 && formTransf.tipo === 'externo'" key="t2e" class="p-5 space-y-3">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Selecionar destinatário</p>
+              <!-- PASSO 2 (externo): BUSCAR USUÁRIO -->
+              <div v-if="passoTransf === 2 && formTransf.tipo === 'externo'" class="p-5 space-y-3">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Buscar destinatário</p>
                 <div class="relative">
                   <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-600 text-sm">🔍</span>
                   <input v-model="buscaUsuario" @input="debounceUsuarios" type="text"
-                    placeholder="Buscar por nome ou e-mail..."
-                    class="w-full bg-white/5 border border-white/10 pl-9 pr-4 py-3 rounded-2xl outline-none focus:border-blue-500 transition-all text-sm placeholder:text-gray-700" />
-                  <div v-if="buscandoUsuarios || buscandoRecentes"
+                    placeholder="Nome ou e-mail (mín. 2 caracteres)..."
+                    class="w-full bg-white/5 border border-white/10 pl-9 pr-10 py-3 rounded-2xl outline-none focus:border-blue-500 transition-all text-sm placeholder:text-gray-600" />
+                  <div v-if="buscandoUsuarios"
                     class="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
                 </div>
+                <!-- Estado vazio: aguardando digitação -->
+                <div v-if="buscaUsuario.length < 2 && !buscandoUsuarios"
+                  class="py-8 flex flex-col items-center gap-2 text-gray-600 text-sm text-center">
+                  <span class="text-3xl">🔍</span>
+                  <p class="font-semibold">Digite para buscar</p>
+                  <p class="text-xs text-gray-700">Mínimo 2 caracteres · busca por nome ou e-mail</p>
+                </div>
+                <!-- Buscando -->
+                <div v-if="buscandoUsuarios && !usuariosDestino.length"
+                  class="py-8 flex flex-col items-center gap-2 text-gray-600 text-sm">
+                  <div class="w-6 h-6 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
+                  <p>Buscando...</p>
+                </div>
+                <!-- Resultados -->
                 <div class="space-y-1.5">
-                  <p v-if="!buscaUsuario && usuariosDestino.length" class="text-[10px] text-gray-600 font-bold uppercase tracking-widest px-1">Usuários disponíveis</p>
                   <button v-for="u in usuariosDestino" :key="u.id"
                     @click="selecionarUsuarioStep(u)"
-                    :class="formTransf.usuarioDestinoId === u.id
-                      ? 'border-blue-500/50 bg-blue-500/10'
-                      : 'border-white/8 bg-white/3 hover:border-white/15 hover:bg-white/5'"
+                    :class="formTransf.usuarioDestinoId === u.id ? 'border-blue-500/50 bg-blue-500/10' : 'border-white/8 bg-white/3 hover:border-white/15 hover:bg-white/5'"
                     class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
                     <div class="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center text-sm font-black text-blue-300 flex-shrink-0">
                       {{ u.nome.charAt(0).toUpperCase() }}
@@ -1715,21 +1837,18 @@ const contasOrigemTransf = computed(() =>
                     <span v-if="formTransf.usuarioDestinoId === u.id" class="text-blue-400 font-black text-sm flex-shrink-0">✓</span>
                     <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
                   </button>
+                  <!-- Sem resultados -->
                   <div v-if="buscaUsuario.length >= 2 && !buscandoUsuarios && !usuariosDestino.length"
-                    class="py-8 text-center text-gray-600 text-sm">
-                    Nenhum usuário encontrado
-                  </div>
-                  <div v-if="!buscaUsuario && !buscandoRecentes && !usuariosDestino.length"
-                    class="py-8 text-center text-gray-600 text-sm">
-                    Digite para buscar usuários
+                    class="py-8 text-center text-gray-600 text-sm space-y-1">
+                    <p class="text-2xl">😕</p>
+                    <p>Nenhum usuário encontrado</p>
+                    <p class="text-xs text-gray-700">Verifique o nome ou e-mail digitado</p>
                   </div>
                 </div>
               </div>
-              </Transition>
 
               <!-- PASSO 3 (propria): VALOR -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 3 && formTransf.tipo === 'propria'" key="t3p" class="p-5 space-y-4">
+              <div v-if="passoTransf === 3 && formTransf.tipo === 'propria'" class="p-5 space-y-4">
                 <div class="flex items-center gap-3 bg-white/3 rounded-2xl px-4 py-3">
                   <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
                     :style="{background: (accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.cor||'#3b82f6')+'20', color: accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.cor||'#3b82f6'}">
@@ -1740,7 +1859,6 @@ const contasOrigemTransf = computed(() =>
                     <p class="text-sm font-semibold">{{ accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.banco }}</p>
                   </div>
                 </div>
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">Qual valor?</p>
                 <div class="relative">
                   <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">R$</span>
                   <input ref="inputValorTransf" @input="e => e.target.value = mascaraMoeda(e.target.value)"
@@ -1758,11 +1876,9 @@ const contasOrigemTransf = computed(() =>
                   Próximo → Conta de origem
                 </button>
               </div>
-              </Transition>
 
               <!-- PASSO 3 (externo): CONTA DO DESTINATÁRIO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 3 && formTransf.tipo === 'externo'" key="t3e" class="p-5 space-y-2">
+              <div v-if="passoTransf === 3 && formTransf.tipo === 'externo'" class="p-5 space-y-2">
                 <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">Conta do destinatário</p>
                 <div v-if="!contasUsuarioDestino.length" class="py-8 flex flex-col items-center gap-2 text-gray-600 text-sm">
                   <div class="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
@@ -1770,9 +1886,7 @@ const contasOrigemTransf = computed(() =>
                 </div>
                 <button v-for="c in contasUsuarioDestino" :key="c.id"
                   @click="selecionarContaExternaStep(c.id)"
-                  :class="formTransf.contaExternaId === c.id
-                    ? 'border-blue-500/50 bg-blue-500/10'
-                    : 'border-white/8 bg-white/3 hover:border-white/15'"
+                  :class="formTransf.contaExternaId === c.id ? 'border-blue-500/50 bg-blue-500/10' : 'border-white/8 bg-white/3 hover:border-white/15'"
                   class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all active:scale-[0.98]">
                   <div class="w-11 h-11 rounded-xl bg-blue-500/12 flex items-center justify-center text-sm font-black text-blue-400 flex-shrink-0">
                     {{ c.banco.charAt(0).toUpperCase() }}
@@ -1781,15 +1895,13 @@ const contasOrigemTransf = computed(() =>
                     <p class="text-sm font-semibold">{{ c.banco }}</p>
                     <p class="text-xs text-gray-500">{{ c.nome }}</p>
                   </div>
-                  <span v-if="formTransf.contaExternaId === c.id" class="text-blue-400 font-black text-sm flex-shrink-0">✓</span>
+                  <span v-if="formTransf.contaExternaId === c.id" class="text-blue-400 font-black flex-shrink-0">✓</span>
                   <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
                 </button>
               </div>
-              </Transition>
 
               <!-- PASSO 4 (externo): VALOR -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 4 && formTransf.tipo === 'externo'" key="t4e" class="p-5 space-y-4">
+              <div v-if="passoTransf === 4 && formTransf.tipo === 'externo'" class="p-5 space-y-4">
                 <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">Qual valor deseja enviar?</p>
                 <div class="relative">
                   <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">R$</span>
@@ -1810,11 +1922,9 @@ const contasOrigemTransf = computed(() =>
                   Próximo → Conta de origem
                 </button>
               </div>
-              </Transition>
 
               <!-- PASSO 4 (propria) / PASSO 5 (externo): CONTA ORIGEM -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="(passoTransf === 4 && formTransf.tipo === 'propria') || (passoTransf === 5 && formTransf.tipo === 'externo')" key="torigem" class="p-5 space-y-2">
+              <div v-if="(passoTransf === 4 && formTransf.tipo === 'propria') || (passoTransf === 5 && formTransf.tipo === 'externo')" class="p-5 space-y-2">
                 <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">De qual conta vai sair?</p>
                 <button v-for="c in contasOrigemTransf" :key="c.id"
                   @click="formTransf.contaOrigemId = c.id; realizarTransferenciaStep()"
@@ -1833,7 +1943,6 @@ const contasOrigemTransf = computed(() =>
                   <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
                 </button>
               </div>
-              </Transition>
 
             </div>
           </div>
@@ -1845,8 +1954,8 @@ const contasOrigemTransf = computed(() =>
     <!-- MODAL CONTA -->
     <Teleport to="body">
       <Transition name="slide-up">
-        <div v-if="modalConta" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center z-50">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
+        <div v-if="modalConta" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50">
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
             <div class="flex items-center justify-between mb-5">
               <h3 class="font-black text-base">🏦 Nova Conta</h3>
               <button @click="modalConta=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
@@ -1892,11 +2001,13 @@ const contasOrigemTransf = computed(() =>
 
 
     
+
+    
     <!-- MODAL ITEM -->
     <Teleport to="body">
       <Transition name="slide-up">
-        <div v-if="modalItem" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center z-50">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
+        <div v-if="modalItem" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50">
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
             <div class="flex items-center justify-between mb-5">
               <h3 class="font-black text-base">{{ subAbaInv==='venda'?'📦 Item à Venda':'🛒 Registrar Compra' }}</h3>
               <button @click="modalItem=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
@@ -1940,11 +2051,13 @@ const contasOrigemTransf = computed(() =>
 
 
     
+
+    
     <!-- MODAL ALERTAS DE ORÇAMENTO -->
     <Teleport to="body">
       <Transition name="slide-up">
-        <div v-if="modalAlertas" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
+        <div v-if="modalAlertas" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center">
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
             <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
               <div class="w-10 h-1 rounded-full bg-white/20"></div>
             </div>
@@ -2056,11 +2169,13 @@ const contasOrigemTransf = computed(() =>
 
 
     
+
+    
     <!-- MODAL EDITAR TRANSAÇÃO -->
     <Teleport to="body">
       <Transition name="slide-up">
-        <div v-if="modalEditar" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
+        <div v-if="modalEditar" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center">
+          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
             <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
               <div class="w-10 h-1 rounded-full bg-white/20"></div>
             </div>
@@ -2161,56 +2276,26 @@ const contasOrigemTransf = computed(() =>
 
 
   </div>
+
+
+  </div>
 </template>
 
 <style scoped>
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
+.modal-fade-enter-active,
+.modal-fade-leave-active { transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+.modal-fade-enter-from,
+.modal-fade-leave-to     { opacity: 0; transform: scale(0.96); }
 
-.slide-up-enter-active, .slide-up-leave-active { transition: transform .35s cubic-bezier(.16,1,.3,1), opacity .35s; }
-.slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); opacity: 0; }
-@media(min-width: 640px) { .slide-up-enter-from, .slide-up-leave-to { transform: scale(.96) translateY(8px); } }
-
-.fade-enter-active, .fade-leave-active { transition: opacity .25s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-
-.toast-enter-active, .toast-leave-active { transition: opacity .3s, transform .3s; }
-.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(12px); }
-
-.diff-badge-enter-active { transition: opacity .4s, transform .4s cubic-bezier(.16,1,.3,1); }
-.diff-badge-leave-active { transition: opacity .6s, transform .6s; }
-.diff-badge-enter-from { opacity: 0; transform: translateY(8px) scale(.8); }
-.diff-badge-leave-to { opacity: 0; transform: translateY(-12px) scale(.9); }
-
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-
-.fade-loading-leave-active { transition: opacity 0.5s ease, transform 0.5s ease; }
-.fade-loading-leave-to     { opacity: 0; transform: scale(1.04); }
-
-/* Loading global */
-@keyframes vf-spin  { to { transform: rotate(360deg); } }
-@keyframes vf-bounce { 0%,80%,100% { transform:translateY(0); } 40% { transform:translateY(-8px); } }
-.vf-spin  { animation: vf-spin 0.8s linear infinite; }
-.vf-dot   { width:8px; height:8px; border-radius:50%; background:#14b8a6; animation: vf-bounce 1.2s ease-in-out infinite; }
-.vf-loading-enter-active { transition: opacity 0.15s ease; }
-.vf-loading-leave-active { transition: opacity 0.4s ease; }
-.vf-loading-enter-from,
-.vf-loading-leave-to     { opacity: 0; }
-
-/* ── Novos transitions ── */
-.modal-slide-enter-active,
-.modal-slide-leave-active { transition: all 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
-.modal-slide-enter-from,
-.modal-slide-leave-to    { opacity: 0; transform: translateY(40px); }
-.step-fade-enter-active,
-.step-fade-leave-active { transition: all 0.18s ease; }
-.step-fade-enter-from,
-.step-fade-leave-to     { opacity: 0; transform: translateX(10px); }
 .toast-slide-enter-active,
 .toast-slide-leave-active { transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
 .toast-slide-enter-from   { opacity: 0; transform: translateX(-50%) translateY(-12px); }
 .toast-slide-leave-to     { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+
+.fade-enter-active,
+.fade-leave-active { transition: opacity 0.2s ease; }
+.fade-enter-from,
+.fade-leave-to     { opacity: 0; }
+
+.tabular-nums { font-variant-numeric: tabular-nums; }
 </style>
