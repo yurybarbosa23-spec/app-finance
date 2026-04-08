@@ -1,1236 +1,3 @@
-<template>
-  <div class="min-h-screen bg-[#0b0d12] text-white flex flex-col">
-
-
-
-    <header class="bg-[#0b0d12]/95 backdrop-blur-lg border-b border-white/5 px-5 h-14 flex items-center justify-between sticky top-0 z-40">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-base shadow-lg shadow-teal-500/30">💰</div>
-        <span class="font-black tracking-tight">FinanceApp</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="hidden sm:flex items-center gap-2 bg-white/5 border border-white/8 px-3 py-1.5 rounded-xl">
-          <div class="w-6 h-6 rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-xs font-black text-white">
-            {{ auth.nome?.charAt(0).toUpperCase() }}
-          </div>
-          <span class="text-sm text-gray-300 font-medium">{{ auth.nome }}</span>
-        </div>
-        <button @click="auth.logout()" class="text-xs text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 px-3 py-1.5 rounded-xl transition-all">Sair</button>
-      </div>
-    </header>
-
-    <main class="flex-1 w-full max-w-3xl mx-auto px-4 pt-5 pb-28">
-
-      <div v-show="aba === 'inicio'" class="space-y-4">
-
-        <div class="relative overflow-hidden rounded-3xl p-6 shadow-2xl transition-all duration-700 bg-gradient-to-br border"
-          :class="[
-            temaSaldo.fundo, 
-            temaSaldo.sombra, 
-            temaSaldo.borda,
-            saldoAnimando==='up'?'ring-2 ring-green-400 ring-offset-2 ring-offset-[#0b0d12]':saldoAnimando==='down'?'ring-2 ring-red-400 ring-offset-2 ring-offset-[#0b0d12]':''
-          ]">
-          
-          <div class="absolute inset-0 opacity-[0.15]" style="background-image: radial-gradient(#fff 1px, transparent 1px); background-size: 16px 16px;"></div>
-          <div class="absolute -top-12 -right-12 w-56 h-56 rounded-full bg-white/10 blur-3xl pointer-events-none transition-colors duration-700"></div>
-          <div class="absolute -bottom-8 -left-8 w-40 h-40 rounded-full bg-black/20 blur-2xl pointer-events-none transition-colors duration-700"></div>
-
-          <div class="relative flex items-start justify-between mb-4 z-10">
-            <div>
-              <p class="text-xs font-bold uppercase tracking-widest mb-0.5 opacity-70" :class="temaSaldo.texto">Saldo Total</p>
-              <p class="text-xs opacity-60" :class="temaSaldo.texto">{{ accounts.contas.length }} conta(s) ativa(s)</p>
-            </div>
-            <div class="flex items-center gap-1 bg-black/20 border border-white/10 backdrop-blur-sm rounded-xl px-3 py-1.5 shadow-inner">
-              <span class="text-xs font-semibold capitalize" :class="temaSaldo.texto">{{ mesAtual }} 📅</span>
-            </div>
-          </div>
-
-          <div class="relative mb-5 z-10">
-            <h2 class="text-4xl sm:text-5xl font-black tracking-tight tabular-nums transition-all duration-700 text-white"
-              :class="saldoAnimando==='up'?'drop-shadow-[0_0_24px_rgba(74,222,128,0.8)] scale-105':saldoAnimando==='down'?'drop-shadow-[0_0_24px_rgba(248,113,113,0.8)] scale-95':''">
-              {{ formatar(saldoExibido) }}
-            </h2>
-            <Transition name="diff-badge">
-              <div v-if="diffVisivel"
-                :class="diffValor>=0?'bg-green-500/20 text-green-300 border-green-400/40':'bg-red-500/20 text-red-300 border-red-400/40'"
-                class="absolute -right-2 top-2 flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-black backdrop-blur-md shadow-lg">
-                {{ diffValor>=0?'📈':'📉' }} {{ diffValor>=0?'+':'' }}{{ formatar(diffValor) }}
-              </div>
-            </Transition>
-          </div>
-
-          <div class="relative mb-5 z-10">
-            <div class="h-2 rounded-full bg-black/30 overflow-hidden backdrop-blur-sm shadow-inner">
-              <div class="h-full rounded-full transition-all duration-1000 ease-out" 
-                   :class="pctEntradas > 50 ? 'bg-gradient-to-r from-green-400 to-teal-300' : 'bg-gradient-to-r from-amber-400 to-red-400'"
-                   :style="{width: pctEntradas+'%'}">
-              </div>
-            </div>
-            <div class="flex justify-between mt-2 text-[11px] font-semibold opacity-80" :class="temaSaldo.texto">
-              <span class="flex items-center gap-1">⬆ Entradas: {{ formatar(totalEntradas) }}</span>
-              <span class="flex items-center gap-1">⬇ Saídas: {{ formatar(totalSaidas) }}</span>
-            </div>
-          </div>
-
-          <!-- ── BOTÕES LADO A LADO ── -->
-          <div class="relative z-10 grid grid-cols-3 gap-2">
-            <button @click="modalAlertas=true"
-              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
-              <span class="text-lg group-hover:scale-125 transition-transform">🔔</span> Alertas
-            </button>
-            <button @click="modalTransferencia=true"
-              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
-              <span class="text-lg group-hover:scale-125 transition-transform">🔄</span> Transferir
-            </button>
-            <button @click="modalLancamento=true"
-              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
-              <div class="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
-              <span class="text-lg group-hover:scale-125 transition-transform">⚡</span> Lançamento Rápido
-            </button>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-3">
-          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all cursor-pointer" @click="aba='historico'; filtroAtivo='receita'; subAbaHistorico='lancamentos'">
-            <div class="w-8 h-8 rounded-xl bg-green-500/15 flex items-center justify-center text-sm mb-3">⬆️</div>
-            <p class="text-xs text-gray-500 mb-1">Entradas</p>
-            <p class="font-black text-green-400 text-sm sm:text-base tabular-nums">{{ formatar(totalEntradas) }}</p>
-          </div>
-          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all cursor-pointer" @click="aba='historico'; filtroAtivo='despesa'; subAbaHistorico='lancamentos'">
-            <div class="w-8 h-8 rounded-xl bg-red-500/15 flex items-center justify-center text-sm mb-3">⬇️</div>
-            <p class="text-xs text-gray-500 mb-1">Saídas</p>
-            <p class="font-black text-red-400 text-sm sm:text-base tabular-nums">{{ formatar(totalSaidas) }}</p>
-          </div>
-          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all">
-            <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm mb-3" :class="balanco>=0?'bg-teal-500/15':'bg-red-500/15'">⚖️</div>
-            <p class="text-xs text-gray-500 mb-1">Balanço</p>
-            <p class="font-black text-sm sm:text-base tabular-nums" :class="balanco>=0?'text-teal-400':'text-red-400'">{{ formatar(balanco) }}</p>
-          </div>
-        </div>
-
-        <div v-if="accounts.contas.length > 0" class="bg-[#13161f] rounded-2xl border border-white/5 overflow-hidden">
-          <div class="px-4 py-3 flex items-center justify-between border-b border-white/5">
-            <p class="text-sm font-bold">🏦 Minhas Contas</p>
-            <button @click="aba='contas'" class="text-teal-400 text-xs hover:underline">Gerenciar →</button>
-          </div>
-          <div class="divide-y divide-white/5">
-            <div v-for="conta in accounts.contas" :key="conta.id" class="flex items-center gap-3 px-4 py-3">
-              <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                :style="{background:conta.cor+'22',color:conta.cor}">
-                {{ conta.banco.charAt(0).toUpperCase() }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-semibold">{{ conta.banco }}</p>
-                <div class="h-1 rounded-full bg-white/5 mt-1.5">
-                  <div class="h-1 rounded-full transition-all duration-700" :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div>
-                </div>
-              </div>
-              <p class="font-black text-sm tabular-nums flex-shrink-0" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
-            </div>
-          </div>
-        </div>
-        <div v-else class="bg-[#13161f] rounded-2xl border border-dashed border-white/10 p-8 text-center">
-          <p class="text-3xl mb-2">🏦</p>
-          <p class="text-gray-500 text-sm mb-3">Nenhuma conta ainda</p>
-          <button @click="modalConta=true" class="text-teal-400 text-sm font-semibold hover:underline">+ Adicionar conta</button>
-        </div>
-
-
-        <!-- ── ALERTAS DE ORÇAMENTO ── -->
-        <div v-if="budgets.budgets.filter(b=>b.ativo).length > 0">
-          <!-- Alertas ultrapassados (vermelho) -->
-          <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual >= b.limite)" :key="'alerta-'+b.id"
-            class="bg-[#13161f] rounded-2xl border border-red-500/30 overflow-hidden mb-3">
-            <div class="px-4 py-3 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center text-base flex-shrink-0">
-                {{ emojiCat[b.categoria] || '⚠️' }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-0.5">
-                  <p class="text-sm font-bold text-red-400">🚨 Limite ultrapassado!</p>
-                  <span class="text-xs bg-red-500/15 text-red-400 px-2 py-0.5 rounded-full font-semibold">{{ labelCat[b.categoria] || b.categoria }}</span>
-                </div>
-                <p class="text-xs text-gray-400">
-                  Você gastou <span class="text-red-400 font-black tabular-nums">{{ formatar(b.gastoAtual) }}</span>
-                  de <span class="text-gray-300 font-semibold tabular-nums">{{ formatar(b.limite) }}</span> este mês
-                </p>
-                <div class="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <div class="h-full rounded-full bg-red-500 transition-all duration-700"
-                    :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
-                </div>
-              </div>
-              <button @click="modalAlertas=true" class="text-gray-600 hover:text-gray-400 text-xs flex-shrink-0">⚙️</button>
-            </div>
-          </div>
-
-          <!-- Alertas de aviso (amarelo, 70%-99%) -->
-          <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual >= b.limite*0.7 && b.gastoAtual < b.limite)" :key="'aviso-'+b.id"
-            class="bg-[#13161f] rounded-2xl border border-amber-500/30 overflow-hidden mb-3">
-            <div class="px-4 py-3 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center text-base flex-shrink-0">
-                {{ emojiCat[b.categoria] || '⚠️' }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-0.5">
-                  <p class="text-sm font-bold text-amber-400">⚠️ Atenção!</p>
-                  <span class="text-xs bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full font-semibold">{{ labelCat[b.categoria] || b.categoria }}</span>
-                </div>
-                <p class="text-xs text-gray-400">
-                  Você gastou <span class="text-amber-400 font-black tabular-nums">{{ formatar(b.gastoAtual) }}</span>
-                  de <span class="text-gray-300 font-semibold tabular-nums">{{ formatar(b.limite) }}</span> este mês
-                  <span class="text-amber-500">({{ Math.round((b.gastoAtual/b.limite)*100) }}%)</span>
-                </p>
-                <div class="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <div class="h-full rounded-full bg-amber-500 transition-all duration-700"
-                    :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
-                </div>
-              </div>
-              <button @click="modalAlertas=true" class="text-gray-600 hover:text-gray-400 text-xs flex-shrink-0">⚙️</button>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="items.itens.filter(i=>i.status==='disponivel').length > 0"
-          class="bg-[#13161f] rounded-2xl border border-amber-500/20 overflow-hidden">
-          <div class="px-4 py-3 flex items-center justify-between border-b border-white/5">
-            <p class="text-sm font-bold text-amber-400">📦 À venda <span class="text-amber-400/60 font-normal">({{ items.itens.filter(i=>i.status==='disponivel').length }})</span></p>
-            <button @click="aba='inventario'" class="text-amber-400 text-xs hover:underline">Ver tudo →</button>
-          </div>
-          <div class="divide-y divide-white/5">
-            <div v-for="item in items.itens.filter(i=>i.status==='disponivel').slice(0,3)" :key="item.id"
-              class="flex items-center gap-3 px-4 py-3">
-              <span class="text-xl">📦</span>
-              <p class="flex-1 text-sm font-medium truncate">{{ item.nome }}</p>
-              <div class="flex items-center gap-2">
-                <p class="text-amber-400 font-black text-sm tabular-nums">{{ formatar(item.valor) }}</p>
-                <button @click="abrirVenda(item)" class="text-xs bg-teal-500/15 text-teal-400 hover:bg-teal-500/25 px-2.5 py-1.5 rounded-xl transition-all font-semibold">Vender</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-show="aba === 'contas'" class="space-y-4">
-        <div class="flex items-center justify-between">
-          <p class="font-black text-base">🏦 Contas</p>
-          <div class="flex items-center gap-2">
-            <button @click="modalTransferencia=true"
-              class="bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/20 text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center gap-1.5">
-              🔄 Transferir
-            </button>
-            <button @click="modalConta=true" class="bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-lg shadow-teal-500/20">+ Nova Conta</button>
-          </div>
-        </div>
-
-        <div v-if="accounts.contas.length > 0" class="bg-gradient-to-r from-teal-500/10 to-cyan-500/10 border border-teal-500/20 rounded-2xl p-4 flex items-center justify-between">
-          <p class="text-sm text-teal-300/70">Total consolidado</p>
-          <p class="font-black text-xl text-teal-400 tabular-nums">{{ formatar(accounts.saldoTotal) }}</p>
-        </div>
-
-        <div v-if="accounts.contas.length===0" class="bg-[#13161f] rounded-2xl p-12 border border-white/5 text-center">
-          <p class="text-4xl mb-3">🏦</p>
-          <p class="text-gray-500 text-sm mb-3">Nenhuma conta ainda.</p>
-          <button @click="modalConta=true" class="text-teal-400 text-sm hover:underline">Adicionar →</button>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div v-for="conta in accounts.contas" :key="conta.id"
-            class="bg-[#13161f] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-all group relative overflow-hidden">
-            <div class="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl" :style="{backgroundColor:conta.cor}"></div>
-            <div class="flex items-center justify-between mb-5">
-              <div class="flex items-center gap-3">
-                <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-xl font-black"
-                  :style="{background:conta.cor+'18',color:conta.cor}">
-                  {{ conta.banco.charAt(0).toUpperCase() }}
-                </div>
-                <div>
-                  <p class="font-bold text-sm">{{ conta.banco }}</p>
-                  <p class="text-gray-600 text-xs">Conta bancária</p>
-                </div>
-              </div>
-              <button @click="confirmarDel(conta)"
-                class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-all text-sm">✕</button>
-            </div>
-            <p class="text-3xl font-black tabular-nums" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
-            <div class="mt-4">
-              <div class="flex justify-between text-xs text-gray-600 mb-1.5">
-                <span>Participação</span>
-                <span class="font-semibold">{{ accounts.saldoTotal>0 ? Math.round((conta.saldo/accounts.saldoTotal)*100) : 0 }}%</span>
-              </div>
-              <div class="h-1.5 rounded-full bg-white/5">
-                <div class="h-1.5 rounded-full transition-all duration-700"
-                  :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-show="aba === 'inventario'" class="space-y-4">
-        <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
-          <button v-for="t in ['venda','compra']" :key="t" @click="subAbaInv=t"
-            :class="subAbaInv===t?(t==='venda'?'bg-amber-500':'bg-blue-500')+' text-white shadow':'text-gray-400 hover:text-white'"
-            class="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all">
-            {{ t==='venda'?'📦 À Venda':'🛒 Compras' }}
-          </button>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div class="bg-[#13161f] rounded-2xl p-4 border border-amber-500/20">
-            <p class="text-xs text-amber-400 mb-1">📦 Potencial</p>
-            <p class="font-black text-lg tabular-nums">{{ formatar(items.itens.filter(i=>i.tipo==='venda'&&i.status==='disponivel').reduce((a,i)=>a+i.valor,0)) }}</p>
-            <p class="text-xs text-gray-600 mt-1">{{ items.itens.filter(i=>i.status==='disponivel').length }} item(ns)</p>
-          </div>
-          <div class="bg-[#13161f] rounded-2xl p-4 border border-blue-500/20">
-            <p class="text-xs text-blue-400 mb-1">🛒 Total gasto</p>
-            <p class="font-black text-lg tabular-nums">{{ formatar(items.itens.filter(i=>i.tipo==='compra').reduce((a,i)=>a+i.valor,0)) }}</p>
-            <p class="text-xs text-gray-600 mt-1">{{ items.itens.filter(i=>i.tipo==='compra').length }} compra(s)</p>
-          </div>
-        </div>
-
-        <button @click="modalItem=true"
-          :class="subAbaInv==='venda'?'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20':'bg-blue-500 hover:bg-blue-600 shadow-blue-500/20'"
-          class="w-full py-3 rounded-2xl font-bold text-sm transition-all shadow-lg">
-          {{ subAbaInv==='venda'?'+ Adicionar Item à Venda':'+ Registrar Compra' }}
-        </button>
-
-        <div v-show="subAbaInv==='venda'">
-          <div v-if="itensVenda.length===0" class="bg-[#13161f] rounded-2xl p-10 border border-white/5 text-center">
-            <p class="text-4xl mb-2">📦</p><p class="text-gray-500 text-sm">Nenhum item à venda.</p>
-          </div>
-          <div class="space-y-3">
-            <div v-for="item in itensVenda" :key="item.id"
-              class="bg-[#13161f] border border-white/5 hover:border-white/10 rounded-2xl p-4 transition-all group">
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex items-center gap-3 flex-1 min-w-0">
-                  <div class="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center text-xl flex-shrink-0">📦</div>
-                  <div class="min-w-0">
-                    <p class="font-semibold text-sm truncate">{{ item.nome }}</p>
-                    <p v-if="item.descricao" class="text-gray-500 text-xs truncate">{{ item.descricao }}</p>
-                    <span :class="item.status==='disponivel'?'bg-amber-500/15 text-amber-400':'bg-green-500/15 text-green-400'"
-                      class="text-xs px-2 py-0.5 rounded-full font-medium mt-1 inline-block">
-                      {{ item.status==='disponivel'?'🟡 Disponível':'✅ Vendido' }}
-                    </span>
-                  </div>
-                </div>
-                <div class="text-right flex-shrink-0">
-                  <p class="font-black text-amber-400 tabular-nums">{{ formatar(item.valor) }}</p>
-                  <div class="flex gap-1 mt-2 justify-end">
-                    <button v-if="item.status==='disponivel'" @click="abrirVenda(item)"
-                      class="text-xs bg-teal-500/15 text-teal-400 hover:bg-teal-500/25 px-3 py-1.5 rounded-xl transition-all font-semibold">
-                      Vender 💸
-                    </button>
-                    <button @click="items.deletar(item.id).then(()=>mostrarToast('🗑️ Removido'))"
-                      class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-xs text-gray-600 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-red-500/10 transition-all">✕</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-show="subAbaInv==='compra'">
-          <div v-if="itensCompra.length===0" class="bg-[#13161f] rounded-2xl p-10 border border-white/5 text-center">
-            <p class="text-4xl mb-2">🛒</p><p class="text-gray-500 text-sm">Nenhuma compra registrada.</p>
-          </div>
-          <div class="space-y-3">
-            <div v-for="item in itensCompra" :key="item.id"
-              class="bg-[#13161f] border border-white/5 rounded-2xl p-4 flex items-center gap-3 group hover:border-white/10 transition-all">
-              <div class="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center text-xl flex-shrink-0">🛒</div>
-              <div class="flex-1 min-w-0">
-                <p class="font-semibold text-sm truncate">{{ item.nome }}</p>
-                <p v-if="item.descricao" class="text-gray-500 text-xs">{{ item.descricao }}</p>
-                <span class="text-xs bg-blue-500/15 text-blue-400 px-2 py-0.5 rounded-full">✅ Pago</span>
-              </div>
-              <div class="text-right flex-shrink-0 flex items-center gap-2">
-                <p class="font-black text-blue-400 tabular-nums">{{ formatar(item.valor) }}</p>
-                <button @click="items.deletar(item.id).then(()=>mostrarToast('🗑️ Removido'))"
-                  class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-600 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-red-500/10 transition-all text-sm">✕</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-show="aba === 'historico'" class="space-y-4">
-        <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
-          <button @click="subAbaHistorico='lancamentos'"
-            :class="subAbaHistorico==='lancamentos'?'bg-teal-500 text-white shadow':'text-gray-500 hover:text-white'"
-            class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all">
-            📋 Lançamentos
-          </button>
-          <button @click="subAbaHistorico='metricas'"
-            :class="subAbaHistorico==='metricas'?'bg-violet-600 text-white shadow shadow-violet-500/20':'text-gray-500 hover:text-white'"
-            class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all">
-            📊 Métricas
-          </button>
-        </div>
-
-        <div v-show="subAbaHistorico==='lancamentos'" class="space-y-4">
-          <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
-            <button v-for="f in filtros" :key="f.val" @click="filtroAtivo=f.val"
-              :class="filtroAtivo===f.val?'bg-teal-500 text-white shadow':'text-gray-500 hover:text-white'"
-              class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all">
-              {{ f.label }}
-            </button>
-          </div>
-          <div class="flex items-center justify-between bg-[#13161f] border border-white/5 rounded-2xl px-4 py-3">
-            <span class="text-xs text-gray-500">
-              {{ filtroAtivo==='todos'?'Todas as movimentações':filtroAtivo==='receita'?'Entradas':'Saídas' }}
-              <span class="text-gray-700 ml-1">({{ transacoesFiltradas.length }})</span>
-            </span>
-            <span class="font-black text-sm tabular-nums"
-              :class="filtroAtivo==='despesa'?'text-red-400':filtroAtivo==='receita'?'text-green-400':'text-teal-400'">
-              {{ filtroAtivo==='todos'?formatar(balanco):filtroAtivo==='receita'?formatar(totalEntradas):formatar(totalSaidas) }}
-            </span>
-          </div>
-          <div v-if="transacoesFiltradas.length===0" class="bg-[#13161f] rounded-2xl p-12 border border-white/5 text-center">
-            <p class="text-4xl mb-2">📭</p>
-            <p class="text-gray-500 text-sm">Nenhum lançamento ainda.</p>
-            <button @click="modalLancamento=true" class="mt-3 text-teal-400 text-sm font-semibold hover:underline">+ Criar lançamento</button>
-          </div>
-          <div class="bg-[#13161f] rounded-2xl border border-white/5 overflow-hidden">
-            <div v-for="(t,i) in transacoesFiltradas" :key="t.id"
-              :class="i>0?'border-t border-white/5':''"
-              class="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.02] transition-all group">
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center text-base flex-shrink-0"
-                :class="t.tipo==='receita'?'bg-green-500/15':'bg-red-500/15'">
-                {{ emojiCat[t.categoria]||(t.tipo==='receita'?'💚':'🔴') }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium truncate">{{ t.descricao }}</p>
-                <p class="text-gray-600 text-xs">{{ t.Account?.banco || t.Account?.nome }} • {{ fmtData(t.data) }}</p>
-              </div>
-              <div class="flex items-center gap-2 flex-shrink-0">
-                <p :class="t.tipo==='receita'?'text-green-400':'text-red-400'" class="text-sm font-black tabular-nums">
-                  {{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}
-                </p>
-                <button @click="abrirEditar(t)"
-                  class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-teal-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-teal-500/10 transition-all text-sm">✏️</button>
-                <button @click="tx.deletar(t.id).then(()=>mostrarToast('🗑️ Removido'))"
-                  class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-red-500/10 transition-all text-sm">✕</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-show="subAbaHistorico==='metricas'" class="space-y-5">
-          <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
-            <button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val"
-              :class="periodoMetricas===p.val?'bg-violet-600 text-white shadow shadow-violet-500/20':'text-gray-500 hover:text-white'"
-              class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all">
-              {{ p.label }}
-            </button>
-          </div>
-          <div class="flex items-center gap-2 px-1">
-            <div class="w-2 h-2 rounded-full bg-violet-500"></div>
-            <p class="text-sm font-bold text-gray-300 capitalize">{{ labelPeriodo }}</p>
-          </div>
-          <div class="grid grid-cols-3 gap-3">
-            <div class="bg-[#13161f] border border-red-500/20 rounded-2xl p-4 text-center">
-              <div class="w-8 h-8 rounded-xl bg-red-500/15 flex items-center justify-center text-base mx-auto mb-2">⬇️</div>
-              <p class="text-xs text-gray-600 mb-1">Gasto</p>
-              <p class="font-black text-red-400 tabular-nums text-sm">{{ formatar(totalGastoPeriodo) }}</p>
-            </div>
-            <div class="bg-[#13161f] border border-green-500/20 rounded-2xl p-4 text-center">
-              <div class="w-8 h-8 rounded-xl bg-green-500/15 flex items-center justify-center text-base mx-auto mb-2">⬆️</div>
-              <p class="text-xs text-gray-600 mb-1">Recebido</p>
-              <p class="font-black text-green-400 tabular-nums text-sm">{{ formatar(totalRecebPeriodo) }}</p>
-            </div>
-            <div class="bg-[#13161f] border border-violet-500/20 rounded-2xl p-4 text-center">
-              <div class="w-8 h-8 rounded-xl bg-violet-500/15 flex items-center justify-center text-base mx-auto mb-2">💹</div>
-              <p class="text-xs text-gray-600 mb-1">Economizado</p>
-              <p class="font-black tabular-nums text-sm" :class="taxaEconomia>0?'text-violet-400':'text-gray-600'">{{ taxaEconomia }}%</p>
-            </div>
-          </div>
-          <div v-if="gastosPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
-            <p class="text-xs font-black text-gray-500 uppercase tracking-widest">⬇️ Gastos por categoria</p>
-            <div class="flex items-center gap-5">
-              <div class="relative flex-shrink-0">
-                <svg viewBox="0 0 120 120" class="w-32 h-32 -rotate-90">
-                  <circle cx="60" cy="60" r="45" fill="none" stroke="#ffffff08" stroke-width="14"/>
-                  <circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none"
-                    :stroke="seg.cor" stroke-width="14" stroke-linecap="butt"
-                    :stroke-dasharray="`${seg.dash - 2} ${CIRCUMFERENCE - seg.dash + 2}`"
-                    :stroke-dashoffset="-(seg.offset)"
-                    style="transition:stroke-dasharray .6s ease,stroke-dashoffset .6s ease"/>
-                </svg>
-                <div class="absolute inset-0 flex flex-col items-center justify-center">
-                  <p class="text-xs text-gray-600">Total</p>
-                  <p class="font-black text-white text-xs tabular-nums leading-tight">{{ formatar(totalGastoPeriodo) }}</p>
-                </div>
-              </div>
-              <div class="flex-1 space-y-2 min-w-0">
-                <div v-for="item in gastosPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
-                  <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{backgroundColor:item.cor}"></div>
-                  <p class="text-xs text-gray-400 truncate flex-1">{{ item.label }}</p>
-                  <p class="text-xs font-black tabular-nums flex-shrink-0" :style="{color:item.cor}">{{ item.pct }}%</p>
-                </div>
-                <p v-if="gastosPorCat.length>4" class="text-xs text-gray-700 pl-4">+{{ gastosPorCat.length-4 }} mais abaixo</p>
-              </div>
-            </div>
-            <div class="space-y-3">
-              <div v-for="item in gastosPorCat" :key="item.cat" class="space-y-1.5">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="text-base">{{ item.emoji }}</span>
-                    <span class="text-sm font-semibold">{{ item.label }}</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs text-gray-500 tabular-nums">{{ formatar(item.valor) }}</span>
-                    <span class="text-sm font-black tabular-nums w-10 text-right" :style="{color:item.cor}">{{ item.pct }}%</span>
-                  </div>
-                </div>
-                <div class="h-2 rounded-full bg-white/5 overflow-hidden">
-                  <div class="h-2 rounded-full transition-all duration-700"
-                    :style="{width:item.pct+'%',backgroundColor:item.cor,boxShadow:`0 0 8px ${item.cor}60`}"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-if="receitasPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
-            <p class="text-xs font-black text-gray-500 uppercase tracking-widest">⬆️ Receitas por categoria</p>
-            <div class="flex items-center gap-5">
-              <div class="relative flex-shrink-0">
-                <svg viewBox="0 0 120 120" class="w-32 h-32 -rotate-90">
-                  <circle cx="60" cy="60" r="45" fill="none" stroke="#ffffff08" stroke-width="14"/>
-                  <circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none"
-                    :stroke="seg.cor" stroke-width="14" stroke-linecap="butt"
-                    :stroke-dasharray="`${seg.dash - 2} ${CIRCUMFERENCE - seg.dash + 2}`"
-                    :stroke-dashoffset="-(seg.offset)"
-                    style="transition:stroke-dasharray .6s ease,stroke-dashoffset .6s ease"/>
-                </svg>
-                <div class="absolute inset-0 flex flex-col items-center justify-center">
-                  <p class="text-xs text-gray-600">Total</p>
-                  <p class="font-black text-white text-xs tabular-nums leading-tight">{{ formatar(totalRecebPeriodo) }}</p>
-                </div>
-              </div>
-              <div class="flex-1 space-y-2 min-w-0">
-                <div v-for="item in receitasPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
-                  <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{backgroundColor:item.cor}"></div>
-                  <p class="text-xs text-gray-400 truncate flex-1">{{ item.label }}</p>
-                  <p class="text-xs font-black tabular-nums flex-shrink-0" :style="{color:item.cor}">{{ item.pct }}%</p>
-                </div>
-              </div>
-            </div>
-            <div class="space-y-3">
-              <div v-for="item in receitasPorCat" :key="item.cat" class="space-y-1.5">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="text-base">{{ item.emoji }}</span>
-                    <span class="text-sm font-semibold">{{ item.label }}</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs text-gray-500 tabular-nums">{{ formatar(item.valor) }}</span>
-                    <span class="text-sm font-black tabular-nums w-10 text-right" :style="{color:item.cor}">{{ item.pct }}%</span>
-                  </div>
-                </div>
-                <div class="h-2 rounded-full bg-white/5 overflow-hidden">
-                  <div class="h-2 rounded-full transition-all duration-700"
-                    :style="{width:item.pct+'%',backgroundColor:item.cor,boxShadow:`0 0 8px ${item.cor}60`}"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-if="txPeriodo.length===0" class="bg-[#13161f] border border-dashed border-white/10 rounded-2xl py-14 text-center">
-            <p class="text-4xl mb-2">📊</p>
-            <p class="text-gray-500 text-sm mb-1">Sem dados para este período</p>
-            <button @click="modalLancamento=true" class="mt-2 text-teal-400 text-sm hover:underline">+ Criar lançamento</button>
-          </div>
-        </div>
-      </div>
-
-  
-    <!-- MODAL ALERTAS DE ORÇAMENTO -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalAlertas" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
-            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
-              <div class="w-10 h-1 rounded-full bg-white/20"></div>
-            </div>
-            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10 border-b border-white/5">
-              <h3 class="font-black text-base">🔔 Alertas de Orçamento</h3>
-              <button @click="modalAlertas=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-
-            <!-- Form: novo alerta -->
-            <div class="px-5 pt-4 pb-3 border-b border-white/5">
-              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">Definir limite por categoria</p>
-
-              <!-- Seleção de categoria -->
-              <div class="grid grid-cols-4 gap-2 mb-3">
-                <button v-for="cat in categoriasSaida" :key="cat.id"
-                  @click="formAlerta.categoria=cat.id"
-                  :class="formAlerta.categoria===cat.id?'border-amber-500 bg-amber-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all active:scale-[0.97]">
-                  <span class="text-base">{{ cat.emoji }}</span>
-                  <span class="text-[10px] text-gray-400 font-semibold leading-tight text-center">{{ cat.label }}</span>
-                </button>
-              </div>
-
-              <!-- Valor limite -->
-              <div class="flex gap-2 items-center">
-                <input ref="inputValorAlerta" @input="mascaraMoeda" type="text" inputmode="numeric"
-                  placeholder="R$ 0,00"
-                  class="flex-1 bg-white/5 border border-white/10 text-amber-400 text-xl font-black text-center px-4 py-3 rounded-2xl outline-none focus:border-amber-500 transition-all font-mono placeholder:text-gray-700" />
-                <button @click="salvarAlerta"
-                  :disabled="loadingAlerta"
-                  class="bg-amber-500 hover:bg-amber-600 text-white font-black px-5 py-3 rounded-2xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
-                  <svg v-if="loadingAlerta" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                  <span v-if="!loadingAlerta">{{ budgets.budgets.find(b=>b.categoria===formAlerta.categoria) ? 'Atualizar' : 'Criar' }}</span>
-                  <span v-else>...</span>
-                </button>
-              </div>
-              <p v-if="formAlerta.categoria" class="mt-2 text-xs text-gray-600">
-                Alerta para: <span class="text-amber-400 font-semibold">{{ labelCat[formAlerta.categoria] }}</span>
-                <span v-if="budgets.budgets.find(b=>b.categoria===formAlerta.categoria)" class="text-gray-600">
-                  — limite atual: {{ formatar(budgets.budgets.find(b=>b.categoria===formAlerta.categoria)?.limite || 0) }}
-                </span>
-              </p>
-            </div>
-
-            <!-- Lista de alertas configurados -->
-            <div class="px-5 py-4">
-              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">
-                Alertas configurados
-                <span class="text-gray-700 ml-1">({{ budgets.budgets.length }})</span>
-              </p>
-
-              <div v-if="budgets.budgets.length === 0" class="py-8 text-center">
-                <p class="text-3xl mb-2">🔕</p>
-                <p class="text-gray-600 text-sm">Nenhum alerta configurado ainda.</p>
-              </div>
-
-              <div class="space-y-2">
-                <div v-for="b in budgets.budgets" :key="b.id"
-                  class="flex items-center gap-3 bg-white/3 border border-white/8 rounded-2xl px-4 py-3">
-
-                  <!-- Ícone e nome -->
-                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0"
-                    :class="b.gastoAtual >= b.limite ? 'bg-red-500/15' : b.gastoAtual >= b.limite*0.7 ? 'bg-amber-500/15' : 'bg-teal-500/15'">
-                    {{ emojiCat[b.categoria] || '📦' }}
-                  </div>
-
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center justify-between mb-1">
-                      <p class="text-sm font-semibold">{{ labelCat[b.categoria] || b.categoria }}</p>
-                      <span class="text-xs tabular-nums font-black"
-                        :class="b.gastoAtual >= b.limite ? 'text-red-400' : b.gastoAtual >= b.limite*0.7 ? 'text-amber-400' : 'text-teal-400'">
-                        {{ formatar(b.gastoAtual) }} / {{ formatar(b.limite) }}
-                      </span>
-                    </div>
-                    <!-- Barra de progresso -->
-                    <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                      <div class="h-full rounded-full transition-all duration-700"
-                        :class="b.gastoAtual >= b.limite ? 'bg-red-500' : b.gastoAtual >= b.limite*0.7 ? 'bg-amber-500' : 'bg-teal-500'"
-                        :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
-                    </div>
-                    <p class="text-xs text-gray-600 mt-0.5 tabular-nums">{{ Math.round((b.gastoAtual/b.limite)*100) }}% do limite</p>
-                  </div>
-
-                  <!-- Toggle ativo + Deletar -->
-                  <div class="flex items-center gap-1 flex-shrink-0">
-                    <button @click="toggleAlerta(b)"
-                      :class="b.ativo?'bg-teal-500/20 text-teal-400':'bg-white/5 text-gray-600'"
-                      class="w-8 h-8 flex items-center justify-center rounded-xl transition-all text-sm hover:scale-110">
-                      {{ b.ativo ? '🔔' : '🔕' }}
-                    </button>
-                    <button @click="budgets.deletar(b.id).then(()=>mostrarToast('🗑️ Alerta removido'))"
-                      class="w-8 h-8 flex items-center justify-center rounded-xl text-gray-700 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm">✕</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="px-5 pb-6">
-              <button @click="modalAlertas=false"
-                class="w-full bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-
-    <!-- MODAL EDITAR TRANSAÇÃO -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalEditar" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
-            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
-              <div class="w-10 h-1 rounded-full bg-white/20"></div>
-            </div>
-            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10">
-              <h3 class="font-black text-base">✏️ Editar Transação</h3>
-              <button @click="modalEditar=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-
-            <!-- Tipo -->
-            <div class="px-5 mb-4">
-              <div class="flex bg-white/5 rounded-2xl p-1 gap-1">
-                <button @click="formEditar.tipo='receita'; formEditar.categoria='salario'"
-                  :class="formEditar.tipo==='receita'?'bg-green-500 text-white shadow-lg shadow-green-500/20':'text-gray-500 hover:text-gray-300'"
-                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬆️ Entrada</button>
-                <button @click="formEditar.tipo='despesa'; formEditar.categoria='mercado'"
-                  :class="formEditar.tipo==='despesa'?'bg-red-500 text-white shadow-lg shadow-red-500/20':'text-gray-500 hover:text-gray-300'"
-                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬇️ Saída</button>
-              </div>
-            </div>
-
-            <!-- Categorias -->
-            <div class="px-5 mb-4">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Categoria</p>
-              <div class="grid grid-cols-4 gap-2">
-                <button v-for="cat in (formEditar.tipo==='receita' ? categoriasEntrada : categoriasSaida)" :key="cat.id"
-                  @click="formEditar.categoria=cat.id"
-                  :class="formEditar.categoria===cat.id?'border-teal-500 bg-teal-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all active:scale-[0.97]">
-                  <span class="text-base">{{ cat.emoji }}</span>
-                  <span class="text-[10px] text-gray-400 font-semibold">{{ cat.label }}</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Conta -->
-            <div class="px-5 mb-4">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Conta</p>
-              <div class="space-y-2">
-                <button v-for="c in accounts.contas" :key="c.id"
-                  @click="formEditar.accountId=c.id"
-                  :class="formEditar.accountId===c.id?'border-teal-500 bg-teal-500/10':'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
-                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                    :style="{background: c.cor+'22', color: c.cor}">
-                    {{ c.banco.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
-                  </div>
-                  <div v-if="formEditar.accountId===c.id" class="text-teal-400 font-black text-sm">✓</div>
-                </button>
-              </div>
-            </div>
-
-            <!-- Valor -->
-            <div class="px-5 mb-3">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Valor</p>
-              <input ref="inputValorEditar" @input="mascaraMoeda" type="text" inputmode="numeric"
-                placeholder="R$ 0,00"
-                class="w-full bg-white/5 border border-white/10 text-teal-400 text-3xl font-black text-center px-4 py-4 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono placeholder:text-gray-700" />
-            </div>
-
-            <!-- Descrição -->
-            <div class="px-5 mb-3">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Descrição</p>
-              <input v-model="formEditar.descricao" type="text" placeholder="Descrição..."
-                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
-            </div>
-
-            <!-- Data -->
-            <div class="px-5 mb-5">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Data</p>
-              <input v-model="formEditar.data" type="date"
-                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
-            </div>
-
-            <!-- Salvar -->
-            <div class="px-5 pb-6 flex gap-3">
-              <button @click="modalEditar=false"
-                class="flex-1 bg-white/5 hover:bg-white/10 py-4 rounded-2xl text-sm font-semibold transition-all">
-                Cancelar
-              </button>
-              <button @click="salvarEdicao"
-                :disabled="loadingEditar"
-                :class="formEditar.tipo==='receita'?'bg-green-500 hover:bg-green-600 shadow-green-500/20':'bg-teal-500 hover:bg-teal-600 shadow-teal-500/20'"
-                class="flex-1 py-4 rounded-2xl font-black text-base shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2">
-                <svg v-if="loadingEditar" class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                <span v-if="!loadingEditar">✅ Salvar</span>
-                <span v-else>Salvando...</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-
-    <!-- ══════════════════════════════════════════════════════
-         LOADING GLOBAL (cobre tela inteira via Teleport)
-    ══════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <!-- Loading inicial ao dar F5 -->
-      <Transition name="vf-loading">
-        <div v-if="appCarregando"
-          style="position:fixed;inset:0;background:#0b0d12;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;">
-          <div style="position:relative;">
-            <div style="width:80px;height:80px;border-radius:24px;background:linear-gradient(135deg,#14b8a6,#06b6d4);display:flex;align-items:center;justify-content:center;font-size:36px;box-shadow:0 0 40px rgba(20,184,166,0.4);">💰</div>
-            <div style="position:absolute;bottom:-4px;right:-4px;width:24px;height:24px;background:#14b8a6;border-radius:50%;display:flex;align-items:center;justify-content:center;">
-              <svg class="vf-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            </div>
-          </div>
-          <div style="text-align:center;">
-            <p style="font-weight:900;font-size:20px;color:white;letter-spacing:-0.5px;">FinanceApp</p>
-            <p style="color:#6b7280;font-size:14px;margin-top:4px;">Carregando seus dados...</p>
-          </div>
-          <div style="display:flex;gap:6px;margin-top:8px;">
-            <div class="vf-dot" style="animation-delay:0ms;"></div>
-            <div class="vf-dot" style="animation-delay:160ms;"></div>
-            <div class="vf-dot" style="animation-delay:320ms;"></div>
-          </div>
-        </div>
-      </Transition>
-
-      <!-- Loading de operação (criar conta, salvar, etc.) -->
-      <Transition name="vf-loading">
-        <div v-if="loadingGlobal"
-          style="position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(8px);z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
-          <div style="background:#13161f;border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:32px 40px;display:flex;flex-direction:column;align-items:center;gap:16px;box-shadow:0 24px 64px rgba(0,0,0,0.6);">
-            <svg class="vf-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-            <p style="color:white;font-weight:800;font-size:15px;">{{ loadingMsg }}</p>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-  </main>
-
-    <nav class="fixed bottom-0 left-0 right-0 bg-[#0d0f15]/98 backdrop-blur-xl border-t border-white/5 z-40">
-      <div class="max-w-3xl mx-auto flex items-center justify-around px-3 py-2">
-        <button @click="aba='inicio'" :class="aba==='inicio'?'text-teal-400':'text-gray-600 hover:text-gray-400'" class="flex flex-col items-center gap-0.5 flex-1 py-1 transition-all">
-          <span class="text-xl">🏠</span><span class="text-xs font-semibold">Início</span>
-        </button>
-        <button @click="aba='historico'" :class="aba==='historico'?'text-teal-400':'text-gray-600 hover:text-gray-400'" class="flex flex-col items-center gap-0.5 flex-1 py-1 transition-all">
-          <span class="text-xl">📋</span><span class="text-xs font-semibold">Histórico</span>
-        </button>
-        <button @click="modalLancamento=true" class="flex-1 flex flex-col items-center -mt-6">
-          <div class="w-14 h-14 rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-2xl font-black shadow-2xl shadow-teal-500/40 hover:scale-110 active:scale-95 transition-all border-4 border-[#0b0d12]">+</div>
-          <span class="text-xs font-semibold text-teal-400 mt-0.5">Novo</span>
-        </button>
-        <button @click="aba='inventario'" :class="aba==='inventario'?'text-amber-400':'text-gray-600 hover:text-gray-400'" class="flex flex-col items-center gap-0.5 flex-1 py-1 transition-all">
-          <span class="text-xl">📦</span><span class="text-xs font-semibold">Inventário</span>
-        </button>
-        <button @click="aba='contas'" :class="aba==='contas'?'text-teal-400':'text-gray-600 hover:text-gray-400'" class="flex flex-col items-center gap-0.5 flex-1 py-1 transition-all">
-          <span class="text-xl">🏦</span><span class="text-xs font-semibold">Contas</span>
-        </button>
-      </div>
-    </nav>
-
-    <!-- MODAL LANÇAMENTO -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalLancamento" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
-            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
-              <div class="w-10 h-1 rounded-full bg-white/20"></div>
-            </div>
-            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10">
-              <h3 class="font-black text-base">Novo Lançamento</h3>
-              <button @click="fecharLancamento" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-            <div class="px-5 mb-4">
-              <div class="flex bg-white/5 rounded-2xl p-1 gap-1">
-                <button @click="formTx.tipo='receita'; formTx.categoria='salario'"
-                  :class="formTx.tipo==='receita'?'bg-green-500 text-white shadow-lg shadow-green-500/20':'text-gray-500'"
-                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬆️ Entrada</button>
-                <button @click="formTx.tipo='despesa'; formTx.categoria='mercado'"
-                  :class="formTx.tipo==='despesa'?'bg-red-500 text-white shadow-lg shadow-red-500/20':'text-gray-500'"
-                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬇️ Saída</button>
-              </div>
-            </div>
-            <div class="px-5 mb-4">
-              <div class="grid grid-cols-4 gap-2">
-                <button v-for="cat in categoriasAtuais" :key="cat.id"
-                  @click="formTx.categoria=cat.id; formTx.descricao=cat.label"
-                  :class="formTx.categoria===cat.id?'border-teal-500 bg-teal-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="flex flex-col items-center gap-1 py-2.5 rounded-2xl border transition-all active:scale-95">
-                  <span class="text-2xl leading-none">{{ cat.emoji }}</span>
-                  <span class="text-xs text-gray-400 leading-tight text-center">{{ cat.label }}</span>
-                </button>
-              </div>
-            </div>
-            <div class="px-5 mb-3">
-              <input ref="inputValor" @input="mascaraMoeda" type="text" inputmode="numeric" placeholder="R$ 0,00"
-                :class="formTx.tipo==='receita'?'focus:border-green-500 text-green-400':'focus:border-red-500 text-red-400'"
-                class="w-full bg-white/5 border border-white/10 text-3xl font-black text-center px-4 py-4 rounded-2xl outline-none transition-all font-mono placeholder:text-gray-700" />
-            </div>
-            <div class="px-5 mb-3">
-              <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                <button v-for="v in valoresRapidos" :key="v.val" @click="setValorRapido(v.val)"
-                  class="flex-shrink-0 bg-white/5 hover:bg-white/10 active:bg-teal-500/20 border border-white/8 hover:border-teal-500/40 text-gray-300 hover:text-white text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95 whitespace-nowrap">
-                  {{ v.label }}
-                </button>
-              </div>
-            </div>
-            <div class="px-5 mb-3">
-              <input v-model="formTx.descricao" type="text" placeholder="Nota (opcional)..."
-                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
-            </div>
-            <div class="px-5 mb-5">
-              <p class="text-xs text-gray-600 mb-2 font-semibold uppercase tracking-wider">Conta</p>
-              <div class="flex gap-2 flex-wrap">
-                <button v-for="c in accounts.contas" :key="c.id" @click="formTx.accountId=c.id"
-                  :class="formTx.accountId===c.id?'border-teal-500 bg-teal-500/15 text-teal-400':'border-white/10 bg-white/5 text-gray-400'"
-                  class="px-4 py-2 rounded-xl border text-sm font-semibold transition-all active:scale-95">
-                  {{ c.banco }}
-                </button>
-                <button v-if="accounts.contas.length===0" @click="fecharLancamento(); modalConta=true"
-                  class="px-4 py-2 rounded-xl border border-dashed border-white/20 text-xs text-gray-600">+ Criar conta</button>
-              </div>
-            </div>
-            <div class="px-5 pb-6">
-              <button @click="criarTransacao"
-                :class="formTx.tipo==='receita'?'bg-green-500 hover:bg-green-600 shadow-green-500/30':'bg-red-500 hover:bg-red-600 shadow-red-500/30'"
-                class="w-full py-4 rounded-2xl font-black text-base shadow-xl transition-all active:scale-98">
-                {{ formTx.tipo==='receita'?'⬆️ Confirmar Entrada':'⬇️ Confirmar Saída' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- MODAL TRANSFERÊNCIA -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalTransferencia" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
-            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
-              <div class="w-10 h-1 rounded-full bg-white/20"></div>
-            </div>
-            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10">
-              <h3 class="font-black text-base">🔄 Transferência</h3>
-              <button @click="fecharTransferencia" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-
-            <!-- Tipo -->
-            <div class="px-5 mb-4">
-              <div class="flex bg-white/5 rounded-2xl p-1 gap-1">
-                <button @click="formTransf.tipo='propria'"
-                  :class="formTransf.tipo==='propria'?'bg-teal-500 text-white shadow-lg shadow-teal-500/20':'text-gray-500 hover:text-gray-300'"
-                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">🏦 Minhas Contas</button>
-                <button @click="formTransf.tipo='externo'"
-                  :class="formTransf.tipo==='externo'?'bg-blue-500 text-white shadow-lg shadow-blue-500/20':'text-gray-500 hover:text-gray-300'"
-                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">👤 Outro Usuário</button>
-              </div>
-            </div>
-
-            <!-- Conta Origem -->
-            <div class="px-5 mb-4">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">De qual conta</p>
-              <div v-if="accounts.contas.length === 0" class="py-4 text-center text-gray-600 text-sm">Nenhuma conta cadastrada.</div>
-              <div class="space-y-2">
-                <button v-for="c in accounts.contas" :key="c.id"
-                  @click="formTransf.contaOrigemId = c.id; formTransf.contaDestinoId = ''"
-                  :class="formTransf.contaOrigemId===c.id ? 'border-teal-500 bg-teal-500/10' : 'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
-                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                    :style="{background: c.cor+'22', color: c.cor}">
-                    {{ c.banco.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
-                  </div>
-                  <div v-if="formTransf.contaOrigemId === c.id" class="text-teal-400 text-sm font-black">✓</div>
-                </button>
-              </div>
-            </div>
-
-            <!-- Entre Minhas Contas: destino -->
-            <div v-if="formTransf.tipo === 'propria'" class="px-5 mb-4">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Para qual conta</p>
-              <div v-if="contasDestino.length === 0" class="py-4 text-center text-gray-600 text-sm bg-white/3 rounded-2xl border border-dashed border-white/10">
-                Você precisa de pelo menos 2 contas para transferir entre elas.
-              </div>
-              <div class="space-y-2">
-                <button v-for="c in contasDestino" :key="c.id"
-                  @click="formTransf.contaDestinoId = c.id"
-                  :class="formTransf.contaDestinoId===c.id ? 'border-blue-500 bg-blue-500/10' : 'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
-                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                    :style="{background: c.cor+'22', color: c.cor}">
-                    {{ c.banco.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
-                  </div>
-                  <div v-if="formTransf.contaDestinoId === c.id" class="text-blue-400 text-sm font-black">✓</div>
-                </button>
-              </div>
-            </div>
-
-            <!-- Para Outro Usuário -->
-            <div v-if="formTransf.tipo === 'externo'" class="px-5 mb-4 space-y-3">
-              <div>
-                <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Buscar usuário</p>
-                <div class="relative">
-                  <input v-model="buscaUsuario" @input="debounceUsuarios" type="text"
-                    placeholder="Digite nome ou e-mail..."
-                    class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-blue-500 transition-all text-sm placeholder:text-gray-700" />
-                  <div v-if="buscandoUsuarios"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
-                </div>
-              </div>
-              <div v-if="usuariosEncontrados.length > 0" class="space-y-2">
-                <button v-for="u in usuariosEncontrados" :key="u.id"
-                  @click="selecionarUsuarioDestino(u)"
-                  :class="formTransf.usuarioDestinoId===u.id ? 'border-blue-500 bg-blue-500/10' : 'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
-                  <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-sm font-black flex-shrink-0 text-white">
-                    {{ u.nome.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ u.nome }}</p>
-                    <p class="text-xs text-gray-500">{{ u.email }}</p>
-                  </div>
-                  <div v-if="formTransf.usuarioDestinoId === u.id" class="text-blue-400 text-sm font-black">✓</div>
-                </button>
-              </div>
-              <div v-else-if="buscaUsuario.length >= 2 && !buscandoUsuarios"
-                class="py-4 text-center text-gray-600 text-sm">
-                Nenhum usuário encontrado.
-              </div>
-              <div v-if="contasUsuarioDestino.length > 0">
-                <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Conta do destinatário</p>
-                <div class="space-y-2">
-                  <button v-for="c in contasUsuarioDestino" :key="c.id"
-                    @click="formTransf.contaExternaId = c.id"
-                    :class="formTransf.contaExternaId===c.id ? 'border-blue-500 bg-blue-500/10' : 'border-white/8 bg-white/3 hover:border-white/15'"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
-                    <div class="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-black flex-shrink-0">
-                      {{ c.banco.charAt(0).toUpperCase() }}
-                    </div>
-                    <div class="flex-1 text-left">
-                      <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    </div>
-                    <div v-if="formTransf.contaExternaId === c.id" class="text-blue-400 text-sm font-black">✓</div>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Valor -->
-            <div class="px-5 mb-3">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Valor</p>
-              <input ref="inputValorTransf" @input="mascaraMoeda" type="text" inputmode="numeric"
-                placeholder="R$ 0,00"
-                class="w-full bg-white/5 border border-white/10 text-teal-400 text-3xl font-black text-center px-4 py-4 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono placeholder:text-gray-700" />
-            </div>
-
-            <!-- Valores rápidos -->
-            <div class="px-5 mb-3">
-              <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                <button v-for="v in valoresRapidosTransf" :key="v.val" @click="setValorRapidoTransf(v.val)"
-                  class="flex-shrink-0 bg-white/5 hover:bg-white/10 border border-white/8 hover:border-teal-500/40 text-gray-300 hover:text-white text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95 whitespace-nowrap">
-                  {{ v.label }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Descrição -->
-            <div class="px-5 mb-5">
-              <input v-model="formTransf.descricao" type="text" placeholder="Descrição (opcional)..."
-                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
-            </div>
-
-            <!-- Preview da transferência -->
-            <div v-if="previewTransferencia" class="mx-5 mb-4 p-4 rounded-2xl bg-white/4 border border-white/8">
-              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">Resumo</p>
-              <div class="flex items-center gap-2">
-                <div class="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
-                  <p class="text-xs text-gray-500 mb-0.5">De</p>
-                  <p class="text-sm font-bold truncate" :style="{color: previewTransferencia.corOrigem}">{{ previewTransferencia.nomeOrigem }}</p>
-                  <p class="text-xs text-gray-500 tabular-nums">{{ formatar(previewTransferencia.saldoOrigem) }}</p>
-                </div>
-                <div class="flex flex-col items-center gap-1 flex-shrink-0">
-                  <span class="text-teal-400 font-black text-xs tabular-nums">{{ formatar(previewTransferencia.valor) }}</span>
-                  <svg width="24" height="12" viewBox="0 0 24 12" fill="none"><path d="M0 6h20M15 1l5 5-5 5" stroke="#2dd4bf" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </div>
-                <div class="flex-1 bg-white/5 rounded-xl px-3 py-2 text-center">
-                  <p class="text-xs text-gray-500 mb-0.5">Para</p>
-                  <p class="text-sm font-bold truncate" :style="{color: previewTransferencia.corDestino}">{{ previewTransferencia.nomeDestino }}</p>
-                  <p class="text-xs text-gray-400 tabular-nums truncate">{{ previewTransferencia.emailDestino || '' }}</p>
-                </div>
-              </div>
-            </div>
-
-            <!-- Confirmar -->
-            <div class="px-5 pb-6">
-              <button @click="realizarTransferencia"
-                :disabled="loadingTransferencia"
-                :class="formTransf.tipo==='propria'?'bg-teal-500 hover:bg-teal-600 shadow-teal-500/30':'bg-blue-500 hover:bg-blue-600 shadow-blue-500/30'"
-                class="w-full py-4 rounded-2xl font-black text-base shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50">
-                <svg v-if="loadingTransferencia" class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                <span v-if="!loadingTransferencia">🔄 Confirmar Transferência</span>
-                <span v-else>Processando...</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- MODAL CONTA -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalConta" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center z-50">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
-            <div class="flex items-center justify-between mb-5">
-              <h3 class="font-black text-base">🏦 Nova Conta</h3>
-              <button @click="modalConta=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-            <div class="space-y-4">
-              <div>
-                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Banco</label>
-                <div class="grid grid-cols-3 gap-2 mb-2">
-                  <button type="button" v-for="b in bancosRapidos" :key="b" @click="formConta.banco=b"
-                    :class="formConta.banco===b?'border-teal-500 bg-teal-500/15 text-teal-400':'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-white'"
-                    class="py-2.5 rounded-xl border text-xs font-bold transition-all">{{ b }}</button>
-                </div>
-                <input v-model="formConta.banco" type="text" placeholder="Ou digite o banco..."
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Saldo atual</label>
-                <input ref="inputSaldo" @input="mascaraMoeda" type="text" inputmode="numeric" placeholder="R$ 0,00"
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono text-2xl font-black placeholder:text-gray-700" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Cor</label>
-                <div class="flex gap-2 flex-wrap">
-                  <button type="button" v-for="cor in cores" :key="cor" @click="formConta.cor=cor"
-                    class="w-10 h-10 rounded-full border-2 transition-all hover:scale-110 active:scale-95"
-                    :style="{backgroundColor:cor}"
-                    :class="formConta.cor===cor?'border-white scale-110 shadow-lg':'border-transparent'" />
-                </div>
-              </div>
-              <div class="flex gap-3 pt-1">
-                <button type="button" @click="modalConta=false" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
-                <button type="button" @click="criarConta" :disabled="loadingConta"
-                  class="flex-1 bg-teal-500 hover:bg-teal-600 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
-                  <svg v-if="loadingConta" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                  <span>{{ loadingConta ? 'Salvando...' : 'Salvar' }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- MODAL ITEM -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalItem" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center z-50">
-          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
-            <div class="flex items-center justify-between mb-5">
-              <h3 class="font-black text-base">{{ subAbaInv==='venda'?'📦 Item à Venda':'🛒 Registrar Compra' }}</h3>
-              <button @click="modalItem=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-            <div class="space-y-3">
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Nome do item</label>
-                <input v-model="formItem.nome" type="text"
-                  :placeholder="subAbaInv==='venda'?'Ex: Notebook, PS5...':'Ex: Teclado, Monitor...'"
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Descrição <span class="text-gray-700 normal-case">(opcional)</span></label>
-                <input v-model="formItem.descricao" type="text" placeholder="Condição, detalhes..."
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">{{ subAbaInv==='venda'?'Preço de venda':'Valor pago' }}</label>
-                <input ref="inputValorItem" @input="mascaraMoeda" type="text" inputmode="numeric" placeholder="R$ 0,00"
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono text-2xl font-black placeholder:text-gray-700" />
-              </div>
-              <div v-if="subAbaInv==='compra'">
-                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Descontar de qual conta</label>
-                <div class="flex gap-2 flex-wrap">
-                  <button type="button" v-for="c in accounts.contas" :key="c.id" @click="formItem.accountId=c.id"
-                    :class="formItem.accountId===c.id?'border-blue-500 bg-blue-500/15 text-blue-400':'border-white/10 bg-white/5 text-gray-400'"
-                    class="px-3 py-2 rounded-xl border text-sm font-semibold transition-all">{{ c.banco }}</button>
-                </div>
-              </div>
-              <div class="flex gap-3 pt-2">
-                <button type="button" @click="modalItem=false" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
-                <button type="button" @click="criarItem"
-                  :class="subAbaInv==='venda'?'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20':'bg-blue-500 hover:bg-blue-600 shadow-blue-500/20'"
-                  class="flex-1 py-3 rounded-2xl font-black text-sm transition-all shadow-lg">Salvar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- MODAL VENDA -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div v-if="itemParaVenda" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl p-6 w-full max-w-sm shadow-2xl">
-            <div class="text-center mb-5">
-              <p class="text-4xl mb-2">💸</p>
-              <h3 class="font-black text-base">Vender: {{ itemParaVenda.nome }}</h3>
-              <p class="text-gray-500 text-sm mt-1">Preço listado: <span class="text-amber-400 font-bold">{{ formatar(itemParaVenda.valor) }}</span></p>
-            </div>
-            <div class="space-y-3">
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Valor da venda</label>
-                <input ref="inputValorVenda" @input="mascaraMoeda" type="text" inputmode="numeric"
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono text-2xl font-black" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Receber em qual conta</label>
-                <div class="flex gap-2 flex-wrap">
-                  <button type="button" v-for="c in accounts.contas" :key="c.id" @click="formVenda.accountId=c.id"
-                    :class="formVenda.accountId===c.id?'border-teal-500 bg-teal-500/15 text-teal-400':'border-white/10 bg-white/5 text-gray-400'"
-                    class="px-3 py-2 rounded-xl border text-sm font-semibold transition-all">{{ c.banco }}</button>
-                </div>
-              </div>
-              <div class="flex gap-3 pt-2">
-                <button type="button" @click="itemParaVenda=null" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
-                <button type="button" @click="confirmarVenda" class="flex-1 bg-teal-500 hover:bg-teal-600 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-teal-500/20">✅ Confirmar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- MODAL DELETAR CONTA -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div v-if="contaParaDel" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
-          <div class="bg-[#13161f] border border-red-500/20 rounded-3xl p-6 w-full max-w-xs shadow-2xl text-center">
-            <p class="text-4xl mb-3">⚠️</p>
-            <p class="font-black mb-2">Remover conta?</p>
-            <p class="text-gray-500 text-sm mb-5">A conta <strong class="text-white">{{ contaParaDel?.banco }}</strong> será removida permanentemente.</p>
-            <div class="flex gap-3">
-              <button type="button" @click="contaParaDel=null" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
-              <button type="button" @click="deletarConta" class="flex-1 bg-red-500 hover:bg-red-600 py-3 rounded-2xl font-black text-sm transition-all">Remover</button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- TOAST -->
-    <Transition name="toast">
-      <div v-if="toast.visivel"
-        class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-[#1a1d28] border border-white/10 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold z-50 whitespace-nowrap">
-        {{ toast.mensagem }}
-      </div>
-    </Transition>
-
-  </div>
-</template>
-
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useAuthStore }         from '../stores/auth'
@@ -1248,6 +15,16 @@ const tx       = useTransactionsStore()
 const items    = useItemsStore()
 const budgets  = useBudgetsStore()
 const { mascaraMoeda, parseMoeda, formatar, formatarParaInput } = useCurrency()
+
+
+// ── Navegação items
+const navItems = [
+  { val:'inicio',        icon:'🏠', label:'Início'    },
+  { val:'contas',        icon:'🏦', label:'Contas'    },
+  { val:'historico',     icon:'📋', label:'Histórico' },
+  { val:'metricas',      icon:'📊', label:'Métricas'  },
+  { val:'investimentos', icon:'📦', label:'Itens'     },
+]
 
 // ── Navegação
 const aba             = ref('inicio')
@@ -1797,7 +574,14 @@ function debounceUsuarios() {
       const { data } = await api.get('/auth/search', {
         params: { q: buscaUsuario.value }
       })
-      usuariosEncontrados.value = data.filter(u => u.id !== auth.user?.id)
+      const filtrados = data.filter(u => u.id !== auth.user?.id)
+      usuariosEncontrados.value = filtrados
+      // Merge em recentes para aparecer na lista inicial também
+      filtrados.forEach(u => {
+        if (!usuariosRecentes.value.find(r => r.id === u.id)) {
+          usuariosRecentes.value.push(u)
+        }
+      })
     } catch {
       usuariosEncontrados.value = []
     } finally {
@@ -1912,7 +696,1421 @@ async function realizarTransferencia() {
     loadingTransferencia.value = false
   }
 }
+
+// ── Steps modais
+const passoLancamento  = ref(1)
+const passoTransf      = ref(1)
+const usuariosRecentes = ref([])
+const buscandoRecentes = ref(false)
+
+async function carregarTodosUsuarios() {
+  if (usuariosRecentes.value.length > 0) return
+  buscandoRecentes.value = true
+  try {
+    const { data } = await api.get('/auth/search', { params: { q: 'a' } })
+    usuariosRecentes.value = data.filter(u => u.id !== auth.user?.id)
+  } catch { usuariosRecentes.value = [] }
+  finally { buscandoRecentes.value = false }
+}
+
+function fecharLancamentoStep() {
+  modalLancamento.value = false
+  passoLancamento.value = 1
+  formTx.value = { descricao:'', valor:0, tipo:'despesa', categoria:'mercado', data:hoje(), accountId:'' }
+  if (inputValor.value) inputValor.value.value = ''
+}
+
+function selecionarTipoLancamento(tipo) {
+  formTx.value.tipo = tipo
+  formTx.value.categoria = tipo === 'receita' ? 'salario' : 'mercado'
+  passoLancamento.value = 2
+}
+
+function selecionarCategoriaStep(catId) {
+  formTx.value.categoria = catId
+  passoLancamento.value = 3
+  nextTick(() => { if (inputValor.value) inputValor.value.focus() })
+}
+
+function confirmarValorLancamento() {
+  const valor = parseMoeda(inputValor.value?.value || '0')
+  if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  if (accounts.contas.length === 1) {
+    formTx.value.accountId = accounts.contas[0].id
+    criarTransacao()
+    passoLancamento.value = 1
+  } else {
+    passoLancamento.value = 4
+  }
+}
+
+async function criarTransacaoStep() {
+  if (!formTx.value.accountId) { mostrarToast('⚠️ Selecione uma conta'); return }
+  await criarTransacao()
+  passoLancamento.value = 1
+}
+
+function abrirTransferenciaStep() {
+  modalTransferencia.value = true
+  passoTransf.value = 1
+  carregarTodosUsuarios()
+}
+
+function fecharTransferenciaStep() {
+  fecharTransferencia()
+  passoTransf.value = 1
+}
+
+function selecionarTipoTransf(tipo) {
+  formTransf.value.tipo = tipo
+  formTransf.value.contaOrigemId    = ''
+  formTransf.value.contaDestinoId   = ''
+  formTransf.value.usuarioDestinoId = ''
+  formTransf.value.contaExternaId   = ''
+  buscaUsuario.value = ''
+  usuariosEncontrados.value = []
+  passoTransf.value = 2
+}
+
+function selecionarContaDestinoStep(contaId) {
+  formTransf.value.contaDestinoId = contaId
+  passoTransf.value = 3
+  nextTick(() => { if (inputValorTransf.value) inputValorTransf.value.focus() })
+}
+
+async function selecionarUsuarioStep(usuario) {
+  await selecionarUsuarioDestino(usuario)
+  passoTransf.value = 3
+}
+
+function selecionarContaExternaStep(contaId) {
+  formTransf.value.contaExternaId = contaId
+  passoTransf.value = 4
+  nextTick(() => { if (inputValorTransf.value) inputValorTransf.value.focus() })
+}
+
+function confirmarValorTransf() {
+  const valor = parseMoeda(inputValorTransf.value?.value || '0')
+  if (!valor || valor <= 0) { mostrarToast('⚠️ Informe um valor'); return }
+  passoTransf.value = formTransf.value.tipo === 'propria' ? 4 : 5
+}
+
+async function realizarTransferenciaStep() {
+  await realizarTransferencia()
+  if (!modalTransferencia.value) passoTransf.value = 1
+}
+
+const usuariosDestino = computed(() => {
+  const q = buscaUsuario.value.trim().toLowerCase()
+  // Com query ativa: usar resultado do debounce (usuariosEncontrados) ou filtrar recentes
+  if (q) {
+    return usuariosEncontrados.value.length > 0
+      ? usuariosEncontrados.value
+      : usuariosRecentes.value.filter(u =>
+          u.nome.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+        )
+  }
+  // Sem query: mostrar todos os recentes
+  return usuariosRecentes.value
+})
+
+const contasOrigemTransf = computed(() =>
+  formTransf.value.tipo === 'propria'
+    ? accounts.contas.filter(c => c.id !== formTransf.value.contaDestinoId)
+    : accounts.contas
+)
+
 </script>
+
+<template>
+  <!-- App carregando -->
+  <div v-if="appCarregando" class="fixed inset-0 bg-[#0b0d12] flex items-center justify-center z-50">
+    <div class="flex flex-col items-center gap-3">
+      <div class="w-10 h-10 border-2 border-teal-400/30 border-t-teal-400 rounded-full animate-spin"></div>
+      <p class="text-gray-400 text-sm">Carregando...</p>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <Transition name="toast-slide">
+    <div v-if="toast.visivel"
+      class="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-[#1c1f2e] border border-white/10 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold backdrop-blur-xl max-w-xs text-center whitespace-nowrap">
+      {{ toast.mensagem }}
+    </div>
+  </Transition>
+
+  <!-- Loading global -->
+  <Transition name="fade">
+    <div v-if="loadingGlobal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center">
+      <div class="bg-[#1c1f2e] border border-white/10 rounded-2xl px-8 py-6 flex items-center gap-4 shadow-2xl">
+        <div class="w-6 h-6 border-2 border-teal-400/30 border-t-teal-400 rounded-full animate-spin"></div>
+        <span class="text-sm text-gray-300 font-medium">{{ loadingMsg }}</span>
+      </div>
+    </div>
+  </Transition>
+
+  <div class="min-h-dvh bg-[#0b0d12] text-white flex flex-col overflow-x-hidden">
+
+    <!-- ── HEADER ── -->
+    <header class="bg-[#0b0d12]/95 backdrop-blur-xl border-b border-white/5 px-4 h-14 flex items-center justify-between sticky top-0 z-40 lg:pl-72 min-w-0">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-teal-500/30 flex-shrink-0">
+          <span class="text-base leading-none">💰</span>
+        </div>
+        <span class="font-black tracking-tight text-sm hidden sm:block">FinanceApp</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 bg-white/5 border border-white/8 px-3 py-1.5 rounded-xl">
+          <div class="w-6 h-6 rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-xs font-black text-white flex-shrink-0">
+            {{ auth.nome?.charAt(0).toUpperCase() }}
+          </div>
+          <span class="text-sm text-gray-300 font-medium hidden sm:block max-w-[120px] truncate">{{ auth.nome }}</span>
+        </div>
+        <button @click="auth.logout()"
+          class="text-xs text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 px-3 py-1.5 rounded-xl transition-all">
+          Sair
+        </button>
+      </div>
+    </header>
+
+    <!-- ── SIDEBAR (desktop) ── -->
+    <aside class="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-[#0e1017] border-r border-white/5 z-30 pt-14">
+      <div class="flex-1 p-4 space-y-1 overflow-y-auto">
+        <p class="text-[10px] text-gray-600 font-black uppercase tracking-widest px-3 mb-3">Menu</p>
+        <button v-for="item in navItems" :key="item.val" @click="aba = item.val"
+          :class="aba === item.val
+            ? 'bg-teal-500/10 border-teal-500/30 text-teal-400'
+            : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'"
+          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all">
+          <span class="text-lg leading-none">{{ item.icon }}</span>
+          {{ item.label }}
+        </button>
+
+        <div class="pt-4 border-t border-white/5 mt-4 space-y-1">
+          <p class="text-[10px] text-gray-600 font-black uppercase tracking-widest px-3 mb-3">Ações Rápidas</p>
+          <button @click="abrirTransferenciaStep()"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent text-gray-500 hover:text-blue-400 hover:bg-blue-500/5 text-sm font-semibold transition-all">
+            <span class="text-lg leading-none">🔄</span> Transferir
+          </button>
+          <button @click="modalLancamento = true; passoLancamento = 1"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent text-gray-500 hover:text-teal-400 hover:bg-teal-500/5 text-sm font-semibold transition-all">
+            <span class="text-lg leading-none">⚡</span> Lançamento
+          </button>
+          <button @click="modalConta = true"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5 text-sm font-semibold transition-all">
+            <span class="text-lg leading-none">🏦</span> Nova Conta
+          </button>
+          <button @click="modalAlertas = true"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent text-gray-500 hover:text-yellow-400 hover:bg-yellow-500/5 text-sm font-semibold transition-all">
+            <span class="text-lg leading-none">🔔</span> Alertas
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── MAIN CONTENT ── -->
+    <main class="flex-1 min-w-0 overflow-x-hidden px-3 pt-5 pb-28 lg:ml-64 lg:px-8 lg:pb-8">
+
+      <div v-show="aba === 'inicio'" class="space-y-4">
+
+        <div class="relative overflow-hidden rounded-3xl p-6 shadow-2xl transition-all duration-700 bg-gradient-to-br border"
+          :class="[
+            temaSaldo.fundo, 
+            temaSaldo.sombra, 
+            temaSaldo.borda,
+            saldoAnimando==='up'?'ring-2 ring-green-400 ring-offset-2 ring-offset-[#0b0d12]':saldoAnimando==='down'?'ring-2 ring-red-400 ring-offset-2 ring-offset-[#0b0d12]':''
+          ]">
+          
+          <div class="absolute inset-0 opacity-[0.15]" style="background-image: radial-gradient(#fff 1px, transparent 1px); background-size: 16px 16px;"></div>
+          <div class="absolute -top-12 -right-12 w-56 h-56 rounded-full bg-white/10 blur-3xl pointer-events-none transition-colors duration-700"></div>
+          <div class="absolute -bottom-8 -left-8 w-40 h-40 rounded-full bg-black/20 blur-2xl pointer-events-none transition-colors duration-700"></div>
+
+          <div class="relative flex items-start justify-between mb-4 z-10">
+            <div>
+              <p class="text-xs font-bold uppercase tracking-widest mb-0.5 opacity-70" :class="temaSaldo.texto">Saldo Total</p>
+              <p class="text-xs opacity-60" :class="temaSaldo.texto">{{ accounts.contas.length }} conta(s) ativa(s)</p>
+            </div>
+            <div class="flex items-center gap-1 bg-black/20 border border-white/10 backdrop-blur-sm rounded-xl px-3 py-1.5 shadow-inner">
+              <span class="text-xs font-semibold capitalize" :class="temaSaldo.texto">{{ mesAtual }} 📅</span>
+            </div>
+          </div>
+
+          <div class="relative mb-5 z-10">
+            <h2 class="text-4xl sm:text-5xl font-black tracking-tight tabular-nums transition-all duration-700 text-white"
+              :class="saldoAnimando==='up'?'drop-shadow-[0_0_24px_rgba(74,222,128,0.8)] scale-105':saldoAnimando==='down'?'drop-shadow-[0_0_24px_rgba(248,113,113,0.8)] scale-95':''">
+              {{ formatar(saldoExibido) }}
+            </h2>
+            <Transition name="diff-badge">
+              <div v-if="diffVisivel"
+                :class="diffValor>=0?'bg-green-500/20 text-green-300 border-green-400/40':'bg-red-500/20 text-red-300 border-red-400/40'"
+                class="absolute -right-2 top-2 flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-black backdrop-blur-md shadow-lg">
+                {{ diffValor>=0?'📈':'📉' }} {{ diffValor>=0?'+':'' }}{{ formatar(diffValor) }}
+              </div>
+            </Transition>
+          </div>
+
+          <div class="relative mb-5 z-10">
+            <div class="h-2 rounded-full bg-black/30 overflow-hidden backdrop-blur-sm shadow-inner">
+              <div class="h-full rounded-full transition-all duration-1000 ease-out" 
+                   :class="pctEntradas > 50 ? 'bg-gradient-to-r from-green-400 to-teal-300' : 'bg-gradient-to-r from-amber-400 to-red-400'"
+                   :style="{width: pctEntradas+'%'}">
+              </div>
+            </div>
+            <div class="flex justify-between mt-2 text-[11px] font-semibold opacity-80" :class="temaSaldo.texto">
+              <span class="flex items-center gap-1">⬆ Entradas: {{ formatar(totalEntradas) }}</span>
+              <span class="flex items-center gap-1">⬇ Saídas: {{ formatar(totalSaidas) }}</span>
+            </div>
+          </div>
+
+          <!-- ── BOTÕES LADO A LADO ── -->
+          <div class="relative z-10 grid grid-cols-3 gap-2">
+            <button @click="modalAlertas=true"
+              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
+              <span class="text-lg group-hover:scale-125 transition-transform">🔔</span> Alertas
+            </button>
+            <button @click="abrirTransferenciaStep()"
+              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
+              <span class="text-lg group-hover:scale-125 transition-transform">🔄</span> Transferir
+            </button>
+            <button @click="modalLancamento=true; passoLancamento=1"
+              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
+              <div class="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
+              <span class="text-lg group-hover:scale-125 transition-transform">⚡</span> Lançamento Rápido
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all cursor-pointer" @click="aba='historico'; filtroAtivo='receita'; subAbaHistorico='lancamentos'">
+            <div class="w-8 h-8 rounded-xl bg-green-500/15 flex items-center justify-center text-sm mb-3">⬆️</div>
+            <p class="text-xs text-gray-500 mb-1">Entradas</p>
+            <p class="font-black text-green-400 text-sm sm:text-base tabular-nums">{{ formatar(totalEntradas) }}</p>
+          </div>
+          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all cursor-pointer" @click="aba='historico'; filtroAtivo='despesa'; subAbaHistorico='lancamentos'">
+            <div class="w-8 h-8 rounded-xl bg-red-500/15 flex items-center justify-center text-sm mb-3">⬇️</div>
+            <p class="text-xs text-gray-500 mb-1">Saídas</p>
+            <p class="font-black text-red-400 text-sm sm:text-base tabular-nums">{{ formatar(totalSaidas) }}</p>
+          </div>
+          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all">
+            <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm mb-3" :class="balanco>=0?'bg-teal-500/15':'bg-red-500/15'">⚖️</div>
+            <p class="text-xs text-gray-500 mb-1">Balanço</p>
+            <p class="font-black text-sm sm:text-base tabular-nums" :class="balanco>=0?'text-teal-400':'text-red-400'">{{ formatar(balanco) }}</p>
+          </div>
+        </div>
+
+        <div v-if="accounts.contas.length > 0" class="bg-[#13161f] rounded-2xl border border-white/5 overflow-hidden">
+          <div class="px-4 py-3 flex items-center justify-between border-b border-white/5">
+            <p class="text-sm font-bold">🏦 Minhas Contas</p>
+            <button @click="aba='contas'" class="text-teal-400 text-xs hover:underline">Gerenciar →</button>
+          </div>
+          <div class="divide-y divide-white/5">
+            <div v-for="conta in accounts.contas" :key="conta.id" class="flex items-center gap-3 px-4 py-3">
+              <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
+                :style="{background:conta.cor+'22',color:conta.cor}">
+                {{ conta.banco.charAt(0).toUpperCase() }}
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold">{{ conta.banco }}</p>
+                <div class="h-1 rounded-full bg-white/5 mt-1.5">
+                  <div class="h-1 rounded-full transition-all duration-700" :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div>
+                </div>
+              </div>
+              <p class="font-black text-sm tabular-nums flex-shrink-0" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
+            </div>
+          </div>
+        </div>
+        <div v-else class="bg-[#13161f] rounded-2xl border border-dashed border-white/10 p-8 text-center">
+          <p class="text-3xl mb-2">🏦</p>
+          <p class="text-gray-500 text-sm mb-3">Nenhuma conta ainda</p>
+          <button @click="modalConta=true" class="text-teal-400 text-sm font-semibold hover:underline">+ Adicionar conta</button>
+        </div>
+
+
+        <!-- ── ALERTAS DE ORÇAMENTO ── -->
+        <div v-if="budgets.budgets.filter(b=>b.ativo).length > 0">
+          <!-- Alertas ultrapassados (vermelho) -->
+          <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual >= b.limite)" :key="'alerta-'+b.id"
+            class="bg-[#13161f] rounded-2xl border border-red-500/30 overflow-hidden mb-3">
+            <div class="px-4 py-3 flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center text-base flex-shrink-0">
+                {{ emojiCat[b.categoria] || '⚠️' }}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-0.5">
+                  <p class="text-sm font-bold text-red-400">🚨 Limite ultrapassado!</p>
+                  <span class="text-xs bg-red-500/15 text-red-400 px-2 py-0.5 rounded-full font-semibold">{{ labelCat[b.categoria] || b.categoria }}</span>
+                </div>
+                <p class="text-xs text-gray-400">
+                  Você gastou <span class="text-red-400 font-black tabular-nums">{{ formatar(b.gastoAtual) }}</span>
+                  de <span class="text-gray-300 font-semibold tabular-nums">{{ formatar(b.limite) }}</span> este mês
+                </p>
+                <div class="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div class="h-full rounded-full bg-red-500 transition-all duration-700"
+                    :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
+                </div>
+              </div>
+              <button @click="modalAlertas=true" class="text-gray-600 hover:text-gray-400 text-xs flex-shrink-0">⚙️</button>
+            </div>
+          </div>
+
+          <!-- Alertas de aviso (amarelo, 70%-99%) -->
+          <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual >= b.limite*0.7 && b.gastoAtual < b.limite)" :key="'aviso-'+b.id"
+            class="bg-[#13161f] rounded-2xl border border-amber-500/30 overflow-hidden mb-3">
+            <div class="px-4 py-3 flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center text-base flex-shrink-0">
+                {{ emojiCat[b.categoria] || '⚠️' }}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-0.5">
+                  <p class="text-sm font-bold text-amber-400">⚠️ Atenção!</p>
+                  <span class="text-xs bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full font-semibold">{{ labelCat[b.categoria] || b.categoria }}</span>
+                </div>
+                <p class="text-xs text-gray-400">
+                  Você gastou <span class="text-amber-400 font-black tabular-nums">{{ formatar(b.gastoAtual) }}</span>
+                  de <span class="text-gray-300 font-semibold tabular-nums">{{ formatar(b.limite) }}</span> este mês
+                  <span class="text-amber-500">({{ Math.round((b.gastoAtual/b.limite)*100) }}%)</span>
+                </p>
+                <div class="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div class="h-full rounded-full bg-amber-500 transition-all duration-700"
+                    :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
+                </div>
+              </div>
+              <button @click="modalAlertas=true" class="text-gray-600 hover:text-gray-400 text-xs flex-shrink-0">⚙️</button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="items.itens.filter(i=>i.status==='disponivel').length > 0"
+          class="bg-[#13161f] rounded-2xl border border-amber-500/20 overflow-hidden">
+          <div class="px-4 py-3 flex items-center justify-between border-b border-white/5">
+            <p class="text-sm font-bold text-amber-400">📦 À venda <span class="text-amber-400/60 font-normal">({{ items.itens.filter(i=>i.status==='disponivel').length }})</span></p>
+            <button @click="aba='inventario'" class="text-amber-400 text-xs hover:underline">Ver tudo →</button>
+          </div>
+          <div class="divide-y divide-white/5">
+            <div v-for="item in items.itens.filter(i=>i.status==='disponivel').slice(0,3)" :key="item.id"
+              class="flex items-center gap-3 px-4 py-3">
+              <span class="text-xl">📦</span>
+              <p class="flex-1 text-sm font-medium truncate">{{ item.nome }}</p>
+              <div class="flex items-center gap-2">
+                <p class="text-amber-400 font-black text-sm tabular-nums">{{ formatar(item.valor) }}</p>
+                <button @click="abrirVenda(item)" class="text-xs bg-teal-500/15 text-teal-400 hover:bg-teal-500/25 px-2.5 py-1.5 rounded-xl transition-all font-semibold">Vender</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-show="aba === 'contas'" class="space-y-4">
+        <div class="flex items-center justify-between">
+          <p class="font-black text-base">🏦 Contas</p>
+          <div class="flex items-center gap-2">
+            <button @click="abrirTransferenciaStep()"
+              class="bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/20 text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center gap-1.5">
+              🔄 Transferir
+            </button>
+            <button @click="modalConta=true" class="bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-lg shadow-teal-500/20">+ Nova Conta</button>
+          </div>
+        </div>
+
+        <div v-if="accounts.contas.length > 0" class="bg-gradient-to-r from-teal-500/10 to-cyan-500/10 border border-teal-500/20 rounded-2xl p-4 flex items-center justify-between">
+          <p class="text-sm text-teal-300/70">Total consolidado</p>
+          <p class="font-black text-xl text-teal-400 tabular-nums">{{ formatar(accounts.saldoTotal) }}</p>
+        </div>
+
+        <div v-if="accounts.contas.length===0" class="bg-[#13161f] rounded-2xl p-12 border border-white/5 text-center">
+          <p class="text-4xl mb-3">🏦</p>
+          <p class="text-gray-500 text-sm mb-3">Nenhuma conta ainda.</p>
+          <button @click="modalConta=true" class="text-teal-400 text-sm hover:underline">Adicionar →</button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div v-for="conta in accounts.contas" :key="conta.id"
+            class="bg-[#13161f] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-all group relative overflow-hidden">
+            <div class="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl" :style="{backgroundColor:conta.cor}"></div>
+            <div class="flex items-center justify-between mb-5">
+              <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-xl font-black"
+                  :style="{background:conta.cor+'18',color:conta.cor}">
+                  {{ conta.banco.charAt(0).toUpperCase() }}
+                </div>
+                <div>
+                  <p class="font-bold text-sm">{{ conta.banco }}</p>
+                  <p class="text-gray-600 text-xs">Conta bancária</p>
+                </div>
+              </div>
+              <button @click="confirmarDel(conta)"
+                class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-all text-sm">✕</button>
+            </div>
+            <p class="text-3xl font-black tabular-nums" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
+            <div class="mt-4">
+              <div class="flex justify-between text-xs text-gray-600 mb-1.5">
+                <span>Participação</span>
+                <span class="font-semibold">{{ accounts.saldoTotal>0 ? Math.round((conta.saldo/accounts.saldoTotal)*100) : 0 }}%</span>
+              </div>
+              <div class="h-1.5 rounded-full bg-white/5">
+                <div class="h-1.5 rounded-full transition-all duration-700"
+                  :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-show="aba === 'historico'" class="space-y-4">
+        <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
+          <button @click="subAbaHistorico='lancamentos'"
+            :class="subAbaHistorico==='lancamentos'?'bg-teal-500 text-white shadow':'text-gray-500 hover:text-white'"
+            class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all">
+            📋 Lançamentos
+          </button>
+          <button @click="subAbaHistorico='metricas'"
+            :class="subAbaHistorico==='metricas'?'bg-violet-600 text-white shadow shadow-violet-500/20':'text-gray-500 hover:text-white'"
+            class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all">
+            📊 Métricas
+          </button>
+        </div>
+
+        <div v-show="subAbaHistorico==='lancamentos'" class="space-y-4">
+          <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
+            <button v-for="f in filtros" :key="f.val" @click="filtroAtivo=f.val"
+              :class="filtroAtivo===f.val?'bg-teal-500 text-white shadow':'text-gray-500 hover:text-white'"
+              class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all">
+              {{ f.label }}
+            </button>
+          </div>
+          <div class="flex items-center justify-between bg-[#13161f] border border-white/5 rounded-2xl px-4 py-3">
+            <span class="text-xs text-gray-500">
+              {{ filtroAtivo==='todos'?'Todas as movimentações':filtroAtivo==='receita'?'Entradas':'Saídas' }}
+              <span class="text-gray-700 ml-1">({{ transacoesFiltradas.length }})</span>
+            </span>
+            <span class="font-black text-sm tabular-nums"
+              :class="filtroAtivo==='despesa'?'text-red-400':filtroAtivo==='receita'?'text-green-400':'text-teal-400'">
+              {{ filtroAtivo==='todos'?formatar(balanco):filtroAtivo==='receita'?formatar(totalEntradas):formatar(totalSaidas) }}
+            </span>
+          </div>
+          <div v-if="transacoesFiltradas.length===0" class="bg-[#13161f] rounded-2xl p-12 border border-white/5 text-center">
+            <p class="text-4xl mb-2">📭</p>
+            <p class="text-gray-500 text-sm">Nenhum lançamento ainda.</p>
+            <button @click="modalLancamento=true" class="mt-3 text-teal-400 text-sm font-semibold hover:underline">+ Criar lançamento</button>
+          </div>
+          <div class="bg-[#13161f] rounded-2xl border border-white/5 overflow-hidden">
+            <div v-for="(t,i) in transacoesFiltradas" :key="t.id"
+              :class="i>0?'border-t border-white/5':''"
+              class="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.02] transition-all group">
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center text-base flex-shrink-0"
+                :class="t.tipo==='receita'?'bg-green-500/15':'bg-red-500/15'">
+                {{ emojiCat[t.categoria]||(t.tipo==='receita'?'💚':'🔴') }}
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium truncate">{{ t.descricao }}</p>
+                <p class="text-gray-600 text-xs">{{ t.Account?.banco || t.Account?.nome }} • {{ fmtData(t.data) }}</p>
+              </div>
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <p :class="t.tipo==='receita'?'text-green-400':'text-red-400'" class="text-sm font-black tabular-nums">
+                  {{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}
+                </p>
+                <button @click="abrirEditar(t)"
+                  class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-teal-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-teal-500/10 transition-all text-sm">✏️</button>
+                <button @click="tx.deletar(t.id).then(()=>mostrarToast('🗑️ Removido'))"
+                  class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-red-500/10 transition-all text-sm">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-show="subAbaHistorico==='metricas'" class="space-y-5">
+          <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
+            <button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val"
+              :class="periodoMetricas===p.val?'bg-violet-600 text-white shadow shadow-violet-500/20':'text-gray-500 hover:text-white'"
+              class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all">
+              {{ p.label }}
+            </button>
+          </div>
+          <div class="flex items-center gap-2 px-1">
+            <div class="w-2 h-2 rounded-full bg-violet-500"></div>
+            <p class="text-sm font-bold text-gray-300 capitalize">{{ labelPeriodo }}</p>
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="bg-[#13161f] border border-red-500/20 rounded-2xl p-4 text-center">
+              <div class="w-8 h-8 rounded-xl bg-red-500/15 flex items-center justify-center text-base mx-auto mb-2">⬇️</div>
+              <p class="text-xs text-gray-600 mb-1">Gasto</p>
+              <p class="font-black text-red-400 tabular-nums text-sm">{{ formatar(totalGastoPeriodo) }}</p>
+            </div>
+            <div class="bg-[#13161f] border border-green-500/20 rounded-2xl p-4 text-center">
+              <div class="w-8 h-8 rounded-xl bg-green-500/15 flex items-center justify-center text-base mx-auto mb-2">⬆️</div>
+              <p class="text-xs text-gray-600 mb-1">Recebido</p>
+              <p class="font-black text-green-400 tabular-nums text-sm">{{ formatar(totalRecebPeriodo) }}</p>
+            </div>
+            <div class="bg-[#13161f] border border-violet-500/20 rounded-2xl p-4 text-center">
+              <div class="w-8 h-8 rounded-xl bg-violet-500/15 flex items-center justify-center text-base mx-auto mb-2">💹</div>
+              <p class="text-xs text-gray-600 mb-1">Economizado</p>
+              <p class="font-black tabular-nums text-sm" :class="taxaEconomia>0?'text-violet-400':'text-gray-600'">{{ taxaEconomia }}%</p>
+            </div>
+          </div>
+          <div v-if="gastosPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
+            <p class="text-xs font-black text-gray-500 uppercase tracking-widest">⬇️ Gastos por categoria</p>
+            <div class="flex items-center gap-5">
+              <div class="relative flex-shrink-0">
+                <svg viewBox="0 0 120 120" class="w-32 h-32 -rotate-90">
+                  <circle cx="60" cy="60" r="45" fill="none" stroke="#ffffff08" stroke-width="14"/>
+                  <circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none"
+                    :stroke="seg.cor" stroke-width="14" stroke-linecap="butt"
+                    :stroke-dasharray="`${seg.dash - 2} ${CIRCUMFERENCE - seg.dash + 2}`"
+                    :stroke-dashoffset="-(seg.offset)"
+                    style="transition:stroke-dasharray .6s ease,stroke-dashoffset .6s ease"/>
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <p class="text-xs text-gray-600">Total</p>
+                  <p class="font-black text-white text-xs tabular-nums leading-tight">{{ formatar(totalGastoPeriodo) }}</p>
+                </div>
+              </div>
+              <div class="flex-1 space-y-2 min-w-0">
+                <div v-for="item in gastosPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
+                  <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{backgroundColor:item.cor}"></div>
+                  <p class="text-xs text-gray-400 truncate flex-1">{{ item.label }}</p>
+                  <p class="text-xs font-black tabular-nums flex-shrink-0" :style="{color:item.cor}">{{ item.pct }}%</p>
+                </div>
+                <p v-if="gastosPorCat.length>4" class="text-xs text-gray-700 pl-4">+{{ gastosPorCat.length-4 }} mais abaixo</p>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div v-for="item in gastosPorCat" :key="item.cat" class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-base">{{ item.emoji }}</span>
+                    <span class="text-sm font-semibold">{{ item.label }}</span>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs text-gray-500 tabular-nums">{{ formatar(item.valor) }}</span>
+                    <span class="text-sm font-black tabular-nums w-10 text-right" :style="{color:item.cor}">{{ item.pct }}%</span>
+                  </div>
+                </div>
+                <div class="h-2 rounded-full bg-white/5 overflow-hidden">
+                  <div class="h-2 rounded-full transition-all duration-700"
+                    :style="{width:item.pct+'%',backgroundColor:item.cor,boxShadow:`0 0 8px ${item.cor}60`}"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="receitasPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
+            <p class="text-xs font-black text-gray-500 uppercase tracking-widest">⬆️ Receitas por categoria</p>
+            <div class="flex items-center gap-5">
+              <div class="relative flex-shrink-0">
+                <svg viewBox="0 0 120 120" class="w-32 h-32 -rotate-90">
+                  <circle cx="60" cy="60" r="45" fill="none" stroke="#ffffff08" stroke-width="14"/>
+                  <circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none"
+                    :stroke="seg.cor" stroke-width="14" stroke-linecap="butt"
+                    :stroke-dasharray="`${seg.dash - 2} ${CIRCUMFERENCE - seg.dash + 2}`"
+                    :stroke-dashoffset="-(seg.offset)"
+                    style="transition:stroke-dasharray .6s ease,stroke-dashoffset .6s ease"/>
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <p class="text-xs text-gray-600">Total</p>
+                  <p class="font-black text-white text-xs tabular-nums leading-tight">{{ formatar(totalRecebPeriodo) }}</p>
+                </div>
+              </div>
+              <div class="flex-1 space-y-2 min-w-0">
+                <div v-for="item in receitasPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
+                  <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{backgroundColor:item.cor}"></div>
+                  <p class="text-xs text-gray-400 truncate flex-1">{{ item.label }}</p>
+                  <p class="text-xs font-black tabular-nums flex-shrink-0" :style="{color:item.cor}">{{ item.pct }}%</p>
+                </div>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div v-for="item in receitasPorCat" :key="item.cat" class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-base">{{ item.emoji }}</span>
+                    <span class="text-sm font-semibold">{{ item.label }}</span>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs text-gray-500 tabular-nums">{{ formatar(item.valor) }}</span>
+                    <span class="text-sm font-black tabular-nums w-10 text-right" :style="{color:item.cor}">{{ item.pct }}%</span>
+                  </div>
+                </div>
+                <div class="h-2 rounded-full bg-white/5 overflow-hidden">
+                  <div class="h-2 rounded-full transition-all duration-700"
+                    :style="{width:item.pct+'%',backgroundColor:item.cor,boxShadow:`0 0 8px ${item.cor}60`}"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-if="txPeriodo.length===0" class="bg-[#13161f] border border-dashed border-white/10 rounded-2xl py-14 text-center">
+            <p class="text-4xl mb-2">📊</p>
+            <p class="text-gray-500 text-sm mb-1">Sem dados para este período</p>
+            <button @click="modalLancamento=true" class="mt-2 text-teal-400 text-sm hover:underline">+ Criar lançamento</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-show="aba === 'metricas'"></div>
+
+      <div v-show="aba === 'investimentos'"></div>
+
+    </main>
+
+    <!-- ── BOTTOM NAV (mobile) ── -->
+    <nav class="fixed bottom-0 left-0 right-0 lg:hidden bg-[#0e1017]/96 backdrop-blur-xl border-t border-white/5 z-40">
+      <div class="flex items-center justify-around px-1 py-2 max-w-sm mx-auto" style="padding-bottom: max(8px, env(safe-area-inset-bottom))">
+        <button v-for="item in navItems.slice(0,2)" :key="item.val" @click="aba = item.val"
+          :class="aba === item.val ? 'text-teal-400' : 'text-gray-600 hover:text-gray-400'"
+          class="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[52px]">
+          <span class="text-xl leading-none">{{ item.icon }}</span>
+          <span class="text-[10px] font-semibold">{{ item.label }}</span>
+        </button>
+
+        <!-- FAB central -->
+        <button @click="modalLancamento = true; passoLancamento = 1"
+          class="flex flex-col items-center gap-0.5 -mt-5 px-1">
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center shadow-xl shadow-teal-500/40 active:scale-95 transition-transform">
+            <span class="text-2xl leading-none">⚡</span>
+          </div>
+          <span class="text-[10px] font-semibold text-teal-400 mt-0.5">Lançar</span>
+        </button>
+
+        <button v-for="item in navItems.slice(2,4)" :key="item.val" @click="aba = item.val"
+          :class="aba === item.val ? 'text-teal-400' : 'text-gray-600 hover:text-gray-400'"
+          class="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[52px]">
+          <span class="text-xl leading-none">{{ item.icon }}</span>
+          <span class="text-[10px] font-semibold">{{ item.label }}</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MODAL LANÇAMENTO — STEP BY STEP                            -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <Transition name="modal-slide">
+        <div v-if="modalLancamento"
+          class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+          @click.self="fecharLancamentoStep">
+
+          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl overflow-hidden flex flex-col">
+            <!-- Drag handle -->
+            <div class="flex justify-center pt-3 pb-0 sm:hidden flex-shrink-0">
+              <div class="w-10 h-1 rounded-full bg-white/15"></div>
+            </div>
+
+            <!-- Header -->
+            <div class="flex items-center justify-between px-5 pt-4 pb-3 flex-shrink-0">
+              <div class="flex items-center gap-2.5">
+                <button v-if="passoLancamento > 1" @click="passoLancamento--"
+                  class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white text-base font-bold transition-all flex-shrink-0">
+                  ‹
+                </button>
+                <div>
+                  <h3 class="font-black text-sm leading-tight">⚡ Lançamento Rápido</h3>
+                  <p class="text-[10px] text-gray-500 leading-tight mt-0.5">
+                    {{ passoLancamento === 1 ? 'Tipo' : passoLancamento === 2 ? 'Categoria' : passoLancamento === 3 ? 'Valor' : 'Conta' }}
+                    · passo {{ passoLancamento }} de {{ accounts.contas.length > 1 ? 4 : 3 }}
+                  </p>
+                </div>
+              </div>
+              <button @click="fecharLancamentoStep"
+                class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white transition-all flex-shrink-0">
+                <span class="text-xs font-black">✕</span>
+              </button>
+            </div>
+
+            <!-- Progress -->
+            <div class="h-[2px] bg-white/5 flex-shrink-0">
+              <div class="h-full transition-all duration-500 rounded-full"
+                :class="formTx.tipo === 'receita' ? 'bg-emerald-500' : 'bg-red-500'"
+                :style="{width: (passoLancamento / (accounts.contas.length > 1 ? 4 : 3) * 100)+'%'}"></div>
+            </div>
+
+            <div class="overflow-y-auto max-h-[75dvh]">
+
+              <!-- PASSO 1: TIPO -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoLancamento === 1" key="p1" class="p-5 space-y-3">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest pb-1">O que deseja registrar?</p>
+                <button @click="selecionarTipoLancamento('receita')"
+                  class="w-full flex items-center gap-4 p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/6 hover:bg-emerald-500/12 active:scale-[0.98] transition-all">
+                  <div class="w-14 h-14 rounded-2xl bg-emerald-500/12 flex items-center justify-center text-3xl flex-shrink-0">⬆️</div>
+                  <div class="text-left">
+                    <p class="font-black text-emerald-400 text-base">Entrada</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Salário, freelance, presente...</p>
+                  </div>
+                  <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
+                </button>
+                <button @click="selecionarTipoLancamento('despesa')"
+                  class="w-full flex items-center gap-4 p-4 rounded-2xl border border-red-500/20 bg-red-500/6 hover:bg-red-500/12 active:scale-[0.98] transition-all">
+                  <div class="w-14 h-14 rounded-2xl bg-red-500/12 flex items-center justify-center text-3xl flex-shrink-0">⬇️</div>
+                  <div class="text-left">
+                    <p class="font-black text-red-400 text-base">Saída</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Mercado, contas, lazer...</p>
+                  </div>
+                  <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
+                </button>
+              </div>
+              </Transition>
+
+              <!-- PASSO 2: CATEGORIA -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoLancamento === 2" key="p2" class="p-5">
+                <div class="flex items-center gap-2 mb-4">
+                  <span class="text-xl">{{ formTx.tipo === 'receita' ? '⬆️' : '⬇️' }}</span>
+                  <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">
+                    {{ formTx.tipo === 'receita' ? 'Categoria da entrada' : 'Categoria da saída' }}
+                  </p>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <button v-for="cat in categoriasAtuais" :key="cat.id"
+                    @click="selecionarCategoriaStep(cat.id)"
+                    :class="formTx.categoria === cat.id
+                      ? (formTx.tipo==='receita'
+                          ? 'border-emerald-500/60 bg-emerald-500/15 text-white'
+                          : 'border-red-500/60 bg-red-500/15 text-white')
+                      : 'border-white/8 bg-white/3 text-gray-400 hover:border-white/15 hover:bg-white/6'"
+                    class="flex flex-col items-center gap-1.5 p-3 rounded-2xl border transition-all active:scale-[0.94]">
+                    <span class="text-2xl leading-none">{{ cat.emoji }}</span>
+                    <span class="text-[11px] font-semibold text-center leading-tight">{{ cat.label }}</span>
+                  </button>
+                </div>
+              </div>
+              </Transition>
+
+              <!-- PASSO 3: VALOR -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoLancamento === 3" key="p3" class="p-5 space-y-4">
+                <div class="flex items-center gap-3 bg-white/3 rounded-2xl px-4 py-3">
+                  <span class="text-2xl leading-none">{{ emojiCat[formTx.categoria] }}</span>
+                  <div>
+                    <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider">{{ labelCat[formTx.categoria] }}</p>
+                    <p class="text-[10px]" :class="formTx.tipo==='receita'?'text-emerald-400':'text-red-400'">
+                      {{ formTx.tipo === 'receita' ? '⬆️ Entrada' : '⬇️ Saída' }}
+                    </p>
+                  </div>
+                </div>
+                <div class="relative">
+                  <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">R$</span>
+                  <input ref="inputValor" @input="e => e.target.value = mascaraMoeda(e.target.value)"
+                    inputmode="decimal" placeholder="0,00"
+                    class="w-full bg-white/5 border border-white/10 pl-10 pr-4 py-4 rounded-2xl outline-none text-2xl font-black text-center placeholder:text-gray-700 transition-all"
+                    :class="formTx.tipo==='receita' ? 'focus:border-emerald-500' : 'focus:border-red-500'" />
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <button v-for="v in valoresRapidos.slice(4)" :key="v.val" @click="setValorRapido(v.val)"
+                    class="py-2 rounded-xl bg-white/5 border border-white/8 hover:bg-white/10 text-xs font-bold transition-all active:scale-[0.95]">
+                    {{ v.label }}
+                  </button>
+                </div>
+                <input v-model="formTx.descricao" type="text" placeholder="Descrição (opcional)"
+                  class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-white/20 transition-all text-sm placeholder:text-gray-700" />
+                <button @click="confirmarValorLancamento"
+                  :class="formTx.tipo==='receita'
+                    ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25'
+                    : 'bg-red-500 hover:bg-red-600 shadow-red-500/25'"
+                  class="w-full py-4 rounded-2xl font-black text-sm text-white shadow-lg transition-all active:scale-[0.98]">
+                  {{ accounts.contas.length > 1 ? 'Próximo → Escolher conta' : 'Confirmar Lançamento ✓' }}
+                </button>
+              </div>
+              </Transition>
+
+              <!-- PASSO 4: CONTA -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoLancamento === 4" key="p4" class="p-5 space-y-3">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-3">Qual conta foi usada?</p>
+                <button v-for="c in accounts.contas" :key="c.id"
+                  @click="formTx.accountId = c.id; criarTransacaoStep()"
+                  class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-white/8 bg-white/3 hover:border-white/20 hover:bg-white/6 transition-all active:scale-[0.98]">
+                  <div class="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
+                    :style="{background: c.cor+'20', color: c.cor}">
+                    {{ c.banco.charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="flex-1 text-left">
+                    <p class="text-sm font-semibold">{{ c.banco }}</p>
+                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
+                  </div>
+                  <span class="text-gray-600 text-xl font-bold">›</span>
+                </button>
+              </div>
+              </Transition>
+
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MODAL TRANSFERÊNCIA — STEP BY STEP                         -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <Transition name="modal-slide">
+        <div v-if="modalTransferencia"
+          class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+          @click.self="fecharTransferenciaStep">
+
+          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl overflow-hidden flex flex-col">
+            <!-- Drag handle -->
+            <div class="flex justify-center pt-3 pb-0 sm:hidden flex-shrink-0">
+              <div class="w-10 h-1 rounded-full bg-white/15"></div>
+            </div>
+
+            <!-- Header -->
+            <div class="flex items-center justify-between px-5 pt-4 pb-3 flex-shrink-0">
+              <div class="flex items-center gap-2.5">
+                <button v-if="passoTransf > 1" @click="passoTransf--; buscaUsuario=''; usuariosEncontrados=[]"
+                  class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white text-base font-bold transition-all flex-shrink-0">
+                  ‹
+                </button>
+                <div>
+                  <h3 class="font-black text-sm leading-tight">🔄 Transferência</h3>
+                  <p class="text-[10px] text-gray-500 leading-tight mt-0.5">
+                    {{ passoTransf === 1 ? 'Para onde?' :
+                       passoTransf === 2 && formTransf.tipo === 'propria' ? 'Conta destino' :
+                       passoTransf === 2 && formTransf.tipo === 'externo' ? 'Destinatário' :
+                       passoTransf === 3 && formTransf.tipo === 'propria' ? 'Valor' :
+                       passoTransf === 3 && formTransf.tipo === 'externo' ? 'Conta do destinatário' :
+                       passoTransf === 4 && formTransf.tipo === 'propria' ? 'Conta de origem' :
+                       passoTransf === 4 && formTransf.tipo === 'externo' ? 'Valor' :
+                       'Conta de origem' }}
+                    · passo {{ passoTransf }} de {{ formTransf.tipo === 'propria' ? 4 : (passoTransf < 2 ? 5 : 5) }}
+                  </p>
+                </div>
+              </div>
+              <button @click="fecharTransferenciaStep"
+                class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white transition-all flex-shrink-0">
+                <span class="text-xs font-black">✕</span>
+              </button>
+            </div>
+
+            <!-- Progress -->
+            <div class="h-[2px] bg-white/5 flex-shrink-0">
+              <div class="h-full bg-blue-500 transition-all duration-500 rounded-full"
+                :style="{width: (passoTransf / (formTransf.tipo === 'propria' ? 4 : 5) * 100)+'%'}"></div>
+            </div>
+
+            <div class="overflow-y-auto max-h-[78dvh]">
+
+              <!-- PASSO 1: TIPO DE DESTINO -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoTransf === 1" key="t1" class="p-5 space-y-3">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest pb-1">Para onde deseja transferir?</p>
+                <button @click="selecionarTipoTransf('propria')"
+                  :disabled="accounts.contas.length < 2"
+                  class="w-full flex items-center gap-4 p-4 rounded-2xl border border-teal-500/20 bg-teal-500/6 hover:bg-teal-500/12 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                  <div class="w-14 h-14 rounded-2xl bg-teal-500/12 flex items-center justify-center text-3xl flex-shrink-0">🔄</div>
+                  <div class="text-left">
+                    <p class="font-black text-teal-400 text-base">Minha conta</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Transferir entre suas próprias contas</p>
+                    <p v-if="accounts.contas.length < 2" class="text-[10px] text-yellow-500 mt-0.5">Requer ao menos 2 contas</p>
+                  </div>
+                  <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
+                </button>
+                <button @click="selecionarTipoTransf('externo')"
+                  class="w-full flex items-center gap-4 p-4 rounded-2xl border border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/12 active:scale-[0.98] transition-all">
+                  <div class="w-14 h-14 rounded-2xl bg-blue-500/12 flex items-center justify-center text-3xl flex-shrink-0">👤</div>
+                  <div class="text-left">
+                    <p class="font-black text-blue-400 text-base">Outro usuário</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Enviar para conta de outra pessoa</p>
+                  </div>
+                  <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
+                </button>
+              </div>
+              </Transition>
+
+              <!-- PASSO 2 (propria): CONTA DESTINO -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoTransf === 2 && formTransf.tipo === 'propria'" key="t2p" class="p-5 space-y-2">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">Para qual conta?</p>
+                <button v-for="c in accounts.contas" :key="c.id"
+                  @click="selecionarContaDestinoStep(c.id)"
+                  class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-white/8 bg-white/3 hover:border-blue-500/30 hover:bg-blue-500/6 transition-all active:scale-[0.98]">
+                  <div class="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
+                    :style="{background: c.cor+'20', color: c.cor}">
+                    {{ c.banco.charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="flex-1 text-left">
+                    <p class="text-sm font-semibold">{{ c.banco }}</p>
+                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
+                  </div>
+                  <span class="text-gray-600 text-xl font-bold">›</span>
+                </button>
+              </div>
+              </Transition>
+
+              <!-- PASSO 2 (externo): SELECIONAR USUÁRIO -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoTransf === 2 && formTransf.tipo === 'externo'" key="t2e" class="p-5 space-y-3">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Selecionar destinatário</p>
+                <div class="relative">
+                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-600 text-sm">🔍</span>
+                  <input v-model="buscaUsuario" @input="debounceUsuarios" type="text"
+                    placeholder="Buscar por nome ou e-mail..."
+                    class="w-full bg-white/5 border border-white/10 pl-9 pr-4 py-3 rounded-2xl outline-none focus:border-blue-500 transition-all text-sm placeholder:text-gray-700" />
+                  <div v-if="buscandoUsuarios || buscandoRecentes"
+                    class="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
+                </div>
+                <div class="space-y-1.5">
+                  <p v-if="!buscaUsuario && usuariosDestino.length" class="text-[10px] text-gray-600 font-bold uppercase tracking-widest px-1">Usuários disponíveis</p>
+                  <button v-for="u in usuariosDestino" :key="u.id"
+                    @click="selecionarUsuarioStep(u)"
+                    :class="formTransf.usuarioDestinoId === u.id
+                      ? 'border-blue-500/50 bg-blue-500/10'
+                      : 'border-white/8 bg-white/3 hover:border-white/15 hover:bg-white/5'"
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
+                    <div class="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center text-sm font-black text-blue-300 flex-shrink-0">
+                      {{ u.nome.charAt(0).toUpperCase() }}
+                    </div>
+                    <div class="flex-1 text-left min-w-0">
+                      <p class="text-sm font-semibold truncate">{{ u.nome }}</p>
+                      <p class="text-xs text-gray-500 truncate">{{ u.email }}</p>
+                    </div>
+                    <span v-if="formTransf.usuarioDestinoId === u.id" class="text-blue-400 font-black text-sm flex-shrink-0">✓</span>
+                    <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
+                  </button>
+                  <div v-if="buscaUsuario.length >= 2 && !buscandoUsuarios && !usuariosDestino.length"
+                    class="py-8 text-center text-gray-600 text-sm">
+                    Nenhum usuário encontrado
+                  </div>
+                  <div v-if="!buscaUsuario && !buscandoRecentes && !usuariosDestino.length"
+                    class="py-8 text-center text-gray-600 text-sm">
+                    Digite para buscar usuários
+                  </div>
+                </div>
+              </div>
+              </Transition>
+
+              <!-- PASSO 3 (propria): VALOR -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoTransf === 3 && formTransf.tipo === 'propria'" key="t3p" class="p-5 space-y-4">
+                <div class="flex items-center gap-3 bg-white/3 rounded-2xl px-4 py-3">
+                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
+                    :style="{background: (accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.cor||'#3b82f6')+'20', color: accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.cor||'#3b82f6'}">
+                    {{ (accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.banco||'?').charAt(0) }}
+                  </div>
+                  <div>
+                    <p class="text-[10px] text-gray-500">Conta destino</p>
+                    <p class="text-sm font-semibold">{{ accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.banco }}</p>
+                  </div>
+                </div>
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">Qual valor?</p>
+                <div class="relative">
+                  <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">R$</span>
+                  <input ref="inputValorTransf" @input="e => e.target.value = mascaraMoeda(e.target.value)"
+                    inputmode="decimal" placeholder="0,00"
+                    class="w-full bg-white/5 border border-white/10 pl-10 pr-4 py-4 rounded-2xl outline-none focus:border-blue-500 transition-all text-2xl font-black text-center placeholder:text-gray-700" />
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <button v-for="v in valoresRapidosTransf" :key="v.val" @click="setValorRapidoTransf(v.val)"
+                    class="py-2 rounded-xl bg-white/5 border border-white/8 hover:bg-white/10 text-xs font-bold transition-all active:scale-[0.95]">
+                    {{ v.label }}
+                  </button>
+                </div>
+                <button @click="confirmarValorTransf"
+                  class="w-full py-4 rounded-2xl font-black text-sm text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]">
+                  Próximo → Conta de origem
+                </button>
+              </div>
+              </Transition>
+
+              <!-- PASSO 3 (externo): CONTA DO DESTINATÁRIO -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoTransf === 3 && formTransf.tipo === 'externo'" key="t3e" class="p-5 space-y-2">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">Conta do destinatário</p>
+                <div v-if="!contasUsuarioDestino.length" class="py-8 flex flex-col items-center gap-2 text-gray-600 text-sm">
+                  <div class="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
+                  Carregando contas...
+                </div>
+                <button v-for="c in contasUsuarioDestino" :key="c.id"
+                  @click="selecionarContaExternaStep(c.id)"
+                  :class="formTransf.contaExternaId === c.id
+                    ? 'border-blue-500/50 bg-blue-500/10'
+                    : 'border-white/8 bg-white/3 hover:border-white/15'"
+                  class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all active:scale-[0.98]">
+                  <div class="w-11 h-11 rounded-xl bg-blue-500/12 flex items-center justify-center text-sm font-black text-blue-400 flex-shrink-0">
+                    {{ c.banco.charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="flex-1 text-left">
+                    <p class="text-sm font-semibold">{{ c.banco }}</p>
+                    <p class="text-xs text-gray-500">{{ c.nome }}</p>
+                  </div>
+                  <span v-if="formTransf.contaExternaId === c.id" class="text-blue-400 font-black text-sm flex-shrink-0">✓</span>
+                  <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
+                </button>
+              </div>
+              </Transition>
+
+              <!-- PASSO 4 (externo): VALOR -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="passoTransf === 4 && formTransf.tipo === 'externo'" key="t4e" class="p-5 space-y-4">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">Qual valor deseja enviar?</p>
+                <div class="relative">
+                  <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">R$</span>
+                  <input ref="inputValorTransf" @input="e => e.target.value = mascaraMoeda(e.target.value)"
+                    inputmode="decimal" placeholder="0,00"
+                    class="w-full bg-white/5 border border-white/10 pl-10 pr-4 py-4 rounded-2xl outline-none focus:border-blue-500 transition-all text-2xl font-black text-center placeholder:text-gray-700" />
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <button v-for="v in valoresRapidosTransf" :key="v.val" @click="setValorRapidoTransf(v.val)"
+                    class="py-2 rounded-xl bg-white/5 border border-white/8 hover:bg-white/10 text-xs font-bold transition-all active:scale-[0.95]">
+                    {{ v.label }}
+                  </button>
+                </div>
+                <input v-model="formTransf.descricao" type="text" placeholder="Descrição (opcional)"
+                  class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-white/20 transition-all text-sm placeholder:text-gray-700" />
+                <button @click="confirmarValorTransf"
+                  class="w-full py-4 rounded-2xl font-black text-sm text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]">
+                  Próximo → Conta de origem
+                </button>
+              </div>
+              </Transition>
+
+              <!-- PASSO 4 (propria) / PASSO 5 (externo): CONTA ORIGEM -->
+              <Transition name="step-fade" mode="out-in">
+              <div v-if="(passoTransf === 4 && formTransf.tipo === 'propria') || (passoTransf === 5 && formTransf.tipo === 'externo')" key="torigem" class="p-5 space-y-2">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">De qual conta vai sair?</p>
+                <button v-for="c in contasOrigemTransf" :key="c.id"
+                  @click="formTransf.contaOrigemId = c.id; realizarTransferenciaStep()"
+                  :disabled="loadingTransferencia"
+                  class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-white/8 bg-white/3 hover:border-teal-500/30 hover:bg-teal-500/6 transition-all active:scale-[0.98] disabled:opacity-60">
+                  <div class="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
+                    :style="{background: c.cor+'20', color: c.cor}">
+                    {{ c.banco.charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="flex-1 text-left">
+                    <p class="text-sm font-semibold">{{ c.banco }}</p>
+                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
+                  </div>
+                  <div v-if="loadingTransferencia && formTransf.contaOrigemId === c.id"
+                    class="w-5 h-5 border-2 border-teal-400/30 border-t-teal-400 rounded-full animate-spin flex-shrink-0"></div>
+                  <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
+                </button>
+              </div>
+              </Transition>
+
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    
+    <!-- MODAL CONTA -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <div v-if="modalConta" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center z-50">
+          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
+            <div class="flex items-center justify-between mb-5">
+              <h3 class="font-black text-base">🏦 Nova Conta</h3>
+              <button @click="modalConta=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Banco</label>
+                <div class="grid grid-cols-3 gap-2 mb-2">
+                  <button type="button" v-for="b in bancosRapidos" :key="b" @click="formConta.banco=b"
+                    :class="formConta.banco===b?'border-teal-500 bg-teal-500/15 text-teal-400':'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-white'"
+                    class="py-2.5 rounded-xl border text-xs font-bold transition-all">{{ b }}</button>
+                </div>
+                <input v-model="formConta.banco" type="text" placeholder="Ou digite o banco..."
+                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Saldo atual</label>
+                <input ref="inputSaldo" @input="mascaraMoeda" type="text" inputmode="numeric" placeholder="R$ 0,00"
+                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono text-2xl font-black placeholder:text-gray-700" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Cor</label>
+                <div class="flex gap-2 flex-wrap">
+                  <button type="button" v-for="cor in cores" :key="cor" @click="formConta.cor=cor"
+                    class="w-10 h-10 rounded-full border-2 transition-all hover:scale-110 active:scale-95"
+                    :style="{backgroundColor:cor}"
+                    :class="formConta.cor===cor?'border-white scale-110 shadow-lg':'border-transparent'" />
+                </div>
+              </div>
+              <div class="flex gap-3 pt-1">
+                <button type="button" @click="modalConta=false" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
+                <button type="button" @click="criarConta" :disabled="loadingConta"
+                  class="flex-1 bg-teal-500 hover:bg-teal-600 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                  <svg v-if="loadingConta" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                  <span>{{ loadingConta ? 'Salvando...' : 'Salvar' }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+
+    
+    <!-- MODAL ITEM -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <div v-if="modalItem" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center z-50">
+          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
+            <div class="flex items-center justify-between mb-5">
+              <h3 class="font-black text-base">{{ subAbaInv==='venda'?'📦 Item à Venda':'🛒 Registrar Compra' }}</h3>
+              <button @click="modalItem=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
+            </div>
+            <div class="space-y-3">
+              <div>
+                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Nome do item</label>
+                <input v-model="formItem.nome" type="text"
+                  :placeholder="subAbaInv==='venda'?'Ex: Notebook, PS5...':'Ex: Teclado, Monitor...'"
+                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Descrição <span class="text-gray-700 normal-case">(opcional)</span></label>
+                <input v-model="formItem.descricao" type="text" placeholder="Condição, detalhes..."
+                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">{{ subAbaInv==='venda'?'Preço de venda':'Valor pago' }}</label>
+                <input ref="inputValorItem" @input="mascaraMoeda" type="text" inputmode="numeric" placeholder="R$ 0,00"
+                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono text-2xl font-black placeholder:text-gray-700" />
+              </div>
+              <div v-if="subAbaInv==='compra'">
+                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Descontar de qual conta</label>
+                <div class="flex gap-2 flex-wrap">
+                  <button type="button" v-for="c in accounts.contas" :key="c.id" @click="formItem.accountId=c.id"
+                    :class="formItem.accountId===c.id?'border-blue-500 bg-blue-500/15 text-blue-400':'border-white/10 bg-white/5 text-gray-400'"
+                    class="px-3 py-2 rounded-xl border text-sm font-semibold transition-all">{{ c.banco }}</button>
+                </div>
+              </div>
+              <div class="flex gap-3 pt-2">
+                <button type="button" @click="modalItem=false" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
+                <button type="button" @click="criarItem"
+                  :class="subAbaInv==='venda'?'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20':'bg-blue-500 hover:bg-blue-600 shadow-blue-500/20'"
+                  class="flex-1 py-3 rounded-2xl font-black text-sm transition-all shadow-lg">Salvar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+
+    
+    <!-- MODAL ALERTAS DE ORÇAMENTO -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <div v-if="modalAlertas" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
+          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
+            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
+              <div class="w-10 h-1 rounded-full bg-white/20"></div>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10 border-b border-white/5">
+              <h3 class="font-black text-base">🔔 Alertas de Orçamento</h3>
+              <button @click="modalAlertas=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
+            </div>
+
+            <!-- Form: novo alerta -->
+            <div class="px-5 pt-4 pb-3 border-b border-white/5">
+              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">Definir limite por categoria</p>
+
+              <!-- Seleção de categoria -->
+              <div class="grid grid-cols-4 gap-2 mb-3">
+                <button v-for="cat in categoriasSaida" :key="cat.id"
+                  @click="formAlerta.categoria=cat.id"
+                  :class="formAlerta.categoria===cat.id?'border-amber-500 bg-amber-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
+                  class="flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all active:scale-[0.97]">
+                  <span class="text-base">{{ cat.emoji }}</span>
+                  <span class="text-[10px] text-gray-400 font-semibold leading-tight text-center">{{ cat.label }}</span>
+                </button>
+              </div>
+
+              <!-- Valor limite -->
+              <div class="flex gap-2 items-center">
+                <input ref="inputValorAlerta" @input="mascaraMoeda" type="text" inputmode="numeric"
+                  placeholder="R$ 0,00"
+                  class="flex-1 bg-white/5 border border-white/10 text-amber-400 text-xl font-black text-center px-4 py-3 rounded-2xl outline-none focus:border-amber-500 transition-all font-mono placeholder:text-gray-700" />
+                <button @click="salvarAlerta"
+                  :disabled="loadingAlerta"
+                  class="bg-amber-500 hover:bg-amber-600 text-white font-black px-5 py-3 rounded-2xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
+                  <svg v-if="loadingAlerta" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                  <span v-if="!loadingAlerta">{{ budgets.budgets.find(b=>b.categoria===formAlerta.categoria) ? 'Atualizar' : 'Criar' }}</span>
+                  <span v-else>...</span>
+                </button>
+              </div>
+              <p v-if="formAlerta.categoria" class="mt-2 text-xs text-gray-600">
+                Alerta para: <span class="text-amber-400 font-semibold">{{ labelCat[formAlerta.categoria] }}</span>
+                <span v-if="budgets.budgets.find(b=>b.categoria===formAlerta.categoria)" class="text-gray-600">
+                  — limite atual: {{ formatar(budgets.budgets.find(b=>b.categoria===formAlerta.categoria)?.limite || 0) }}
+                </span>
+              </p>
+            </div>
+
+            <!-- Lista de alertas configurados -->
+            <div class="px-5 py-4">
+              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">
+                Alertas configurados
+                <span class="text-gray-700 ml-1">({{ budgets.budgets.length }})</span>
+              </p>
+
+              <div v-if="budgets.budgets.length === 0" class="py-8 text-center">
+                <p class="text-3xl mb-2">🔕</p>
+                <p class="text-gray-600 text-sm">Nenhum alerta configurado ainda.</p>
+              </div>
+
+              <div class="space-y-2">
+                <div v-for="b in budgets.budgets" :key="b.id"
+                  class="flex items-center gap-3 bg-white/3 border border-white/8 rounded-2xl px-4 py-3">
+
+                  <!-- Ícone e nome -->
+                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0"
+                    :class="b.gastoAtual >= b.limite ? 'bg-red-500/15' : b.gastoAtual >= b.limite*0.7 ? 'bg-amber-500/15' : 'bg-teal-500/15'">
+                    {{ emojiCat[b.categoria] || '📦' }}
+                  </div>
+
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1">
+                      <p class="text-sm font-semibold">{{ labelCat[b.categoria] || b.categoria }}</p>
+                      <span class="text-xs tabular-nums font-black"
+                        :class="b.gastoAtual >= b.limite ? 'text-red-400' : b.gastoAtual >= b.limite*0.7 ? 'text-amber-400' : 'text-teal-400'">
+                        {{ formatar(b.gastoAtual) }} / {{ formatar(b.limite) }}
+                      </span>
+                    </div>
+                    <!-- Barra de progresso -->
+                    <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-700"
+                        :class="b.gastoAtual >= b.limite ? 'bg-red-500' : b.gastoAtual >= b.limite*0.7 ? 'bg-amber-500' : 'bg-teal-500'"
+                        :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-0.5 tabular-nums">{{ Math.round((b.gastoAtual/b.limite)*100) }}% do limite</p>
+                  </div>
+
+                  <!-- Toggle ativo + Deletar -->
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <button @click="toggleAlerta(b)"
+                      :class="b.ativo?'bg-teal-500/20 text-teal-400':'bg-white/5 text-gray-600'"
+                      class="w-8 h-8 flex items-center justify-center rounded-xl transition-all text-sm hover:scale-110">
+                      {{ b.ativo ? '🔔' : '🔕' }}
+                    </button>
+                    <button @click="budgets.deletar(b.id).then(()=>mostrarToast('🗑️ Alerta removido'))"
+                      class="w-8 h-8 flex items-center justify-center rounded-xl text-gray-700 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm">✕</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="px-5 pb-6">
+              <button @click="modalAlertas=false"
+                class="w-full bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+
+
+    
+    <!-- MODAL EDITAR TRANSAÇÃO -->
+    <Teleport to="body">
+      <Transition name="slide-up">
+        <div v-if="modalEditar" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
+          <div class="bg-[#13161f] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md shadow-2xl max-h-[92dvh] overflow-y-auto">
+            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
+              <div class="w-10 h-1 rounded-full bg-white/20"></div>
+            </div>
+            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10">
+              <h3 class="font-black text-base">✏️ Editar Transação</h3>
+              <button @click="modalEditar=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
+            </div>
+
+            <!-- Tipo -->
+            <div class="px-5 mb-4">
+              <div class="flex bg-white/5 rounded-2xl p-1 gap-1">
+                <button @click="formEditar.tipo='receita'; formEditar.categoria='salario'"
+                  :class="formEditar.tipo==='receita'?'bg-green-500 text-white shadow-lg shadow-green-500/20':'text-gray-500 hover:text-gray-300'"
+                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬆️ Entrada</button>
+                <button @click="formEditar.tipo='despesa'; formEditar.categoria='mercado'"
+                  :class="formEditar.tipo==='despesa'?'bg-red-500 text-white shadow-lg shadow-red-500/20':'text-gray-500 hover:text-gray-300'"
+                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬇️ Saída</button>
+              </div>
+            </div>
+
+            <!-- Categorias -->
+            <div class="px-5 mb-4">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Categoria</p>
+              <div class="grid grid-cols-4 gap-2">
+                <button v-for="cat in (formEditar.tipo==='receita' ? categoriasEntrada : categoriasSaida)" :key="cat.id"
+                  @click="formEditar.categoria=cat.id"
+                  :class="formEditar.categoria===cat.id?'border-teal-500 bg-teal-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
+                  class="flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all active:scale-[0.97]">
+                  <span class="text-base">{{ cat.emoji }}</span>
+                  <span class="text-[10px] text-gray-400 font-semibold">{{ cat.label }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Conta -->
+            <div class="px-5 mb-4">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Conta</p>
+              <div class="space-y-2">
+                <button v-for="c in accounts.contas" :key="c.id"
+                  @click="formEditar.accountId=c.id"
+                  :class="formEditar.accountId===c.id?'border-teal-500 bg-teal-500/10':'border-white/8 bg-white/3 hover:border-white/15'"
+                  class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
+                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
+                    :style="{background: c.cor+'22', color: c.cor}">
+                    {{ c.banco.charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="flex-1 text-left">
+                    <p class="text-sm font-semibold">{{ c.banco }}</p>
+                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
+                  </div>
+                  <div v-if="formEditar.accountId===c.id" class="text-teal-400 font-black text-sm">✓</div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Valor -->
+            <div class="px-5 mb-3">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Valor</p>
+              <input ref="inputValorEditar" @input="mascaraMoeda" type="text" inputmode="numeric"
+                placeholder="R$ 0,00"
+                class="w-full bg-white/5 border border-white/10 text-teal-400 text-3xl font-black text-center px-4 py-4 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono placeholder:text-gray-700" />
+            </div>
+
+            <!-- Descrição -->
+            <div class="px-5 mb-3">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Descrição</p>
+              <input v-model="formEditar.descricao" type="text" placeholder="Descrição..."
+                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
+            </div>
+
+            <!-- Data -->
+            <div class="px-5 mb-5">
+              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Data</p>
+              <input v-model="formEditar.data" type="date"
+                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
+            </div>
+
+            <!-- Salvar -->
+            <div class="px-5 pb-6 flex gap-3">
+              <button @click="modalEditar=false"
+                class="flex-1 bg-white/5 hover:bg-white/10 py-4 rounded-2xl text-sm font-semibold transition-all">
+                Cancelar
+              </button>
+              <button @click="salvarEdicao"
+                :disabled="loadingEditar"
+                :class="formEditar.tipo==='receita'?'bg-green-500 hover:bg-green-600 shadow-green-500/20':'bg-teal-500 hover:bg-teal-600 shadow-teal-500/20'"
+                class="flex-1 py-4 rounded-2xl font-black text-base shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2">
+                <svg v-if="loadingEditar" class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                <span v-if="!loadingEditar">✅ Salvar</span>
+                <span v-else>Salvando...</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+
+
+  </div>
+</template>
 
 <style scoped>
 @keyframes shimmer {
@@ -1950,4 +2148,18 @@ async function realizarTransferencia() {
 .vf-loading-leave-active { transition: opacity 0.4s ease; }
 .vf-loading-enter-from,
 .vf-loading-leave-to     { opacity: 0; }
+
+/* ── Novos transitions ── */
+.modal-slide-enter-active,
+.modal-slide-leave-active { transition: all 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+.modal-slide-enter-from,
+.modal-slide-leave-to    { opacity: 0; transform: translateY(40px); }
+.step-fade-enter-active,
+.step-fade-leave-active { transition: all 0.18s ease; }
+.step-fade-enter-from,
+.step-fade-leave-to     { opacity: 0; transform: translateX(10px); }
+.toast-slide-enter-active,
+.toast-slide-leave-active { transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.toast-slide-enter-from   { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+.toast-slide-leave-to     { opacity: 0; transform: translateX(-50%) translateY(-8px); }
 </style>
