@@ -70,26 +70,37 @@ router.get('/me', authMiddleware, async (req, res) => {
   }
 })
 
-// GET /api/auth/search?q= — busca usuários por nome ou email
+// GET /api/auth/search?q= — busca usuários por nome ou email (case-insensitive)
 router.get('/search', authMiddleware, async (req, res) => {
   try {
-    const q = req.query.q || ''
+    const q = (req.query.q || '').trim()
     if (q.length < 2) return res.json([])
+
+    // Op.iLike = ILIKE no PostgreSQL (Railway) — busca case-insensitive
+    // Fallback: se banco não suportar iLike (SQLite local), usa like com lowercase
+    let whereOr
+    try {
+      whereOr = [
+        { nome:  { [Op.iLike]: `%${q}%` } },
+        { email: { [Op.iLike]: `%${q}%` } },
+      ]
+    } catch {
+      const ql = q.toLowerCase()
+      whereOr = [
+        { nome:  { [Op.like]: `%${ql}%` } },
+        { email: { [Op.like]: `%${ql}%` } },
+      ]
+    }
 
     const usuarios = await User.findAll({
       where: {
         [Op.and]: [
           { id: { [Op.ne]: req.userId } },
-          {
-            [Op.or]: [
-              { nome:  { [Op.like]: `%${q}%` } },
-              { email: { [Op.like]: `%${q}%` } },
-            ],
-          },
+          { [Op.or]: whereOr },
         ],
       },
       attributes: ['id', 'nome', 'email'],
-      limit: 10,
+      limit: 15,
     })
 
     return res.json(usuarios)
