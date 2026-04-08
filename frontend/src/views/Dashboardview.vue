@@ -1517,27 +1517,33 @@ function ocultarLoading() { loadingGlobal.value = false }
 // ── Lifecycle
 let pollingInterval = null
 
+async function sincronizarSaldo() {
+  try {
+    await accounts.carregar()
+    const novoSaldo = Number(accounts.saldoTotal || 0)
+    const atual     = Number(saldoExibido.value    || 0)
+    if (Math.abs(novoSaldo - atual) >= 0.01) {
+      animarSaldo(novoSaldo)
+    } else {
+      saldoExibido.value = novoSaldo
+    }
+  } catch (err) {
+    console.error('Polling erro:', err)
+  }
+}
+
 onMounted(async () => {
   await accounts.carregar()
   await tx.carregar()
   await items.carregar()
   await budgets.carregar()
-  saldoExibido.value = accounts.saldoTotal
+  saldoExibido.value = Number(accounts.saldoTotal || 0)
   appCarregando.value = false
-
-  // Atualiza saldo e transações a cada 15 segundos em background
-  pollingInterval = setInterval(async () => {
-    const saldoAntes = accounts.saldoTotal
-    await accounts.carregar()
-    await tx.carregar()
-    if (accounts.saldoTotal !== saldoAntes) {
-      animarSaldo(accounts.saldoTotal)
-    }
-  }, 15000)
+  pollingInterval = setInterval(sincronizarSaldo, 5000)
 })
 
 onUnmounted(() => {
-  clearInterval(pollingInterval)
+  if (pollingInterval) clearInterval(pollingInterval)
 })
 
 // ── Ações existentes
@@ -1875,17 +1881,25 @@ async function realizarTransferencia() {
     } else {
       if (!formTransf.value.usuarioDestinoId) { mostrarToast('⚠️ Selecione o usuário destino'); return }
       if (!formTransf.value.contaExternaId)   { mostrarToast('⚠️ Selecione a conta do destinatário'); return }
-      const { data: resTransf } = await api.post('/transfers', {
-  contaOrigemId:  formTransf.value.contaOrigemId,
-  contaDestinoId: formTransf.value.contaExternaId,
-  valor,
-  descricao: formTransf.value.descricao || 'Transferência',
-}).catch(async (err) => {
-  const msg = err.response?.data?.erro || 'Erro na transferência'
-  mostrarToast('❌ ' + msg)
-  throw err
-})
-await tx.carregar()
+
+      let erroTransf = null
+      try {
+        await api.post('/transfers', {
+          contaOrigemId:  Number(formTransf.value.contaOrigemId),
+          contaDestinoId: Number(formTransf.value.contaExternaId),
+          valor,
+          descricao: formTransf.value.descricao || 'Transferência',
+        })
+      } catch (errApi) {
+        erroTransf = errApi.response?.data?.erro || 'Erro na transferência'
+      }
+
+      if (erroTransf) {
+        mostrarToast('❌ ' + erroTransf)
+        return
+      }
+
+      await tx.carregar()
     }
     await accounts.carregar()
     animarSaldo(accounts.saldoTotal)
