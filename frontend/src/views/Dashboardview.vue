@@ -1859,18 +1859,17 @@ async function realizarTransferencia() {
     } else {
       if (!formTransf.value.usuarioDestinoId) { mostrarToast('⚠️ Selecione o usuário destino'); return }
       if (!formTransf.value.contaExternaId)   { mostrarToast('⚠️ Selecione a conta do destinatário'); return }
-      const res = await fetch('/api/transfers', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.token}` },
-        body: JSON.stringify({
-          contaOrigemId:  formTransf.value.contaOrigemId,
-          contaDestinoId: formTransf.value.contaExternaId,
-          valor,
-          descricao: formTransf.value.descricao || 'Transferência',
-        }),
-      })
-      if (!res.ok) { const d = await res.json(); mostrarToast('❌ ' + (d.erro || 'Erro na transferência')); return }
-      await tx.carregar()
+      const { data: resTransf } = await api.post('/transfers', {
+  contaOrigemId:  formTransf.value.contaOrigemId,
+  contaDestinoId: formTransf.value.contaExternaId,
+  valor,
+  descricao: formTransf.value.descricao || 'Transferência',
+}).catch(async (err) => {
+  const msg = err.response?.data?.erro || 'Erro na transferência'
+  mostrarToast('❌ ' + msg)
+  throw err
+})
+await tx.carregar()
     }
     await accounts.carregar()
     animarSaldo(accounts.saldoTotal)
