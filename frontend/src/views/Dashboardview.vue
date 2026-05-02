@@ -1389,7 +1389,94 @@ const contasOrigemTransf = computed(() =>
         </div>
       </div>
 
-      <div v-show="aba === 'metricas'"></div>
+      <!-- ABA MÉTRICAS (principal) -->
+<div v-show="aba === 'metricas'" class="space-y-5">
+
+  <!-- Seletor de período -->
+  <div class="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+    <button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val"
+      :class="periodoMetricas===p.val?'bg-violet-600 text-white shadow shadow-violet-500/20':'text-gray-500 hover:text-white'"
+      class="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all">
+      {{ p.label }}
+    </button>
+  </div>
+
+  <!-- Cards resumo -->
+  <div class="grid grid-cols-3 gap-3">
+    <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5">
+      <p class="text-[11px] text-gray-500 mb-1">Receitas</p>
+      <p class="text-base font-bold text-emerald-400">{{ formatar(totalRecebPeriodo) }}</p>
+    </div>
+    <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5">
+      <p class="text-[11px] text-gray-500 mb-1">Despesas</p>
+      <p class="text-base font-bold text-red-400">{{ formatar(totalGastoPeriodo) }}</p>
+    </div>
+    <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5">
+      <p class="text-[11px] text-gray-500 mb-1">Economia</p>
+      <p class="text-base font-bold text-violet-400">{{ taxaEconomia }}%</p>
+    </div>
+  </div>
+
+  <!-- Donut Despesas por categoria -->
+  <div v-if="gastosPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
+    <p class="text-sm font-semibold text-white">Despesas por categoria</p>
+    <div class="flex items-center gap-6">
+      <svg width="120" height="120" viewBox="0 0 120 120" class="flex-shrink-0">
+        <circle cx="60" cy="60" r="45" fill="none" stroke="#1e2230" stroke-width="18"/>
+        <circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none"
+          :stroke="seg.cor" stroke-width="18" stroke-linecap="butt"
+          :stroke-dasharray="`${seg.dash} ${CIRCUMFERENCE - seg.dash}`"
+          :stroke-dashoffset="CIRCUMFERENCE - seg.offset"
+          style="transform:rotate(-90deg);transform-origin:60px 60px"/>
+      </svg>
+      <div class="flex-1 space-y-2">
+        <div v-for="item in gastosPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{background:item.cor}"/>
+          <span class="text-xs text-gray-300 flex-1">{{ item.label }}</span>
+          <span class="text-xs text-gray-400">{{ item.pct }}%</span>
+        </div>
+      </div>
+    </div>
+    <div v-for="item in gastosPorCat" :key="item.cat" class="space-y-1.5">
+      <div class="flex justify-between text-xs">
+        <span class="text-gray-300">{{ item.emoji }} {{ item.label }}</span>
+        <span class="text-gray-400">{{ formatar(item.valor) }} · {{ item.pct }}%</span>
+      </div>
+      <div class="h-1.5 bg-[#1e2230] rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all duration-500" :style="{width:item.pct+'%',background:item.cor}"/>
+      </div>
+    </div>
+  </div>
+
+  <!-- Donut Receitas por categoria -->
+  <div v-if="receitasPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
+    <p class="text-sm font-semibold text-white">Receitas por categoria</p>
+    <div class="flex items-center gap-6">
+      <svg width="120" height="120" viewBox="0 0 120 120" class="flex-shrink-0">
+        <circle cx="60" cy="60" r="45" fill="none" stroke="#1e2230" stroke-width="18"/>
+        <circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none"
+          :stroke="seg.cor" stroke-width="18" stroke-linecap="butt"
+          :stroke-dasharray="`${seg.dash} ${CIRCUMFERENCE - seg.dash}`"
+          :stroke-dashoffset="CIRCUMFERENCE - seg.offset"
+          style="transform:rotate(-90deg);transform-origin:60px 60px"/>
+      </svg>
+      <div class="flex-1 space-y-2">
+        <div v-for="item in receitasPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{background:item.cor}"/>
+          <span class="text-xs text-gray-300 flex-1">{{ item.label }}</span>
+          <span class="text-xs text-gray-400">{{ item.pct }}%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sem dados -->
+  <div v-if="txPeriodo.length===0" class="bg-[#13161f] border border-dashed border-white/10 rounded-2xl py-14 text-center">
+    <p class="text-4xl mb-3">📊</p>
+    <p class="text-gray-500 text-sm">Nenhuma transação neste período</p>
+  </div>
+
+</div>
 
       <div v-show="aba === 'investimentos'"></div>
 
