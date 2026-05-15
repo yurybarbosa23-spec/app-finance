@@ -1,28 +1,22 @@
-<<<<<<< HEAD
 require('dotenv').config()
 
-=======
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 const sequelize = require('./src/config/database')
-const app       = require('./src/app')
-const { User }  = require('./src/models')
+const app = require('./src/app')
+const { User } = require('./src/models')
 
-<<<<<<< HEAD
 // ❌ removido: require('./src/telegram/bot')
 
-=======
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 async function seedAdmin() {
   const bcrypt = require('bcryptjs')
-  const admin  = await User.findOne({ where: { email: 'admin@financeapp.com' } })
+  const admin = await User.findOne({ where: { email: 'admin@financeapp.com' } })
   if (!admin) {
     const hash = await bcrypt.hash('admin123', 10)
     await User.create({
-      nome:         'Administrador',
-      email:        'admin@financeapp.com',
-      senha:        hash,
+      nome: 'Administrador',
+      email: 'admin@financeapp.com',
+      senha: hash,
       senhaVisivel: 'admin123',
-      isAdmin:      true,
+      isAdmin: true,
     })
     console.log('✅ Admin criado → admin@financeapp.com / admin123')
   }
