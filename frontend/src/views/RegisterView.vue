@@ -1,9 +1,5 @@
 <template>
-<<<<<<< HEAD
-  <div class="auth-root">
-=======
   <div class="auth-root" :class="{ 'page-ready': pageReady }">
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 
     <!-- Painel esquerdo — visual -->
     <aside class="auth-panel">
@@ -22,8 +18,6 @@
           <p>Crie sua conta gratuitamente e tenha visibilidade total sobre o seu dinheiro.</p>
         </div>
 
-<<<<<<< HEAD
-=======
         <!-- Card de preview financeiro animado -->
         <div class="preview-card">
           <div class="preview-card-header">
@@ -50,7 +44,6 @@
           </div>
         </div>
 
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
         <ul class="panel-features">
           <li>
             <span class="feat-icon">
@@ -75,25 +68,13 @@
 
       <div class="panel-glow panel-glow-1"></div>
       <div class="panel-glow panel-glow-2"></div>
-<<<<<<< HEAD
-=======
       <div class="panel-grid"></div>
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
     </aside>
 
     <!-- Painel direito — formulário -->
     <main class="auth-form-side">
       <div class="auth-form-wrap">
 
-<<<<<<< HEAD
-        <div class="brand brand-mobile">
-          <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="9" fill="#0d9488"/>
-            <path d="M10 22V16M10 16V10H19C20.657 10 22 11.343 22 13C22 14.657 20.657 16 19 16H10Z" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M10 19H21" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
-          </svg>
-          <span class="brand-name">Finora</span>
-=======
         <!-- Mobile hero -->
         <div class="mobile-hero">
           <div class="brand brand-mobile">
@@ -104,7 +85,6 @@
             </svg>
             <span class="brand-name">Finora</span>
           </div>
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
         </div>
 
         <div class="form-header">
@@ -112,8 +92,6 @@
           <p>Preencha os dados abaixo para começar</p>
         </div>
 
-<<<<<<< HEAD
-=======
         <!-- Step indicator -->
         <div class="step-indicator">
           <div class="step-item" :class="{ active: stepAtivo >= 1, done: stepAtivo > 1 }">
@@ -138,18 +116,10 @@
           </div>
         </div>
 
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
         <form @submit.prevent="handleCadastro" class="auth-form" novalidate>
 
           <div class="field-group">
             <label for="nome">Nome completo</label>
-<<<<<<< HEAD
-            <div class="input-wrap" :class="{ 'input-error': erroNome }">
-              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              <input id="nome" v-model="nome" type="text" placeholder="Seu nome" autocomplete="name" @blur="validarNome" />
-            </div>
-            <span v-if="erroNome" class="field-error">{{ erroNome }}</span>
-=======
             <div class="input-wrap" :class="{ 'input-error': erroNome, 'input-valid': nomeValido }">
               <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               <input id="nome" v-model="nome" type="text" placeholder="Seu nome completo" autocomplete="name" @blur="validarNome" @input="atualizarStep" />
@@ -159,25 +129,10 @@
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               {{ erroNome }}
             </span>
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
           </div>
 
           <div class="field-group">
             <label for="email">E-mail</label>
-<<<<<<< HEAD
-            <div class="input-wrap" :class="{ 'input-error': erroEmail }">
-              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-              <input id="email" v-model="email" type="email" placeholder="seu@email.com" autocomplete="email" @blur="validarEmail" />
-            </div>
-            <span v-if="erroEmail" class="field-error">{{ erroEmail }}</span>
-          </div>
-
-          <div class="field-group">
-            <label for="senha">Senha</label>
-            <div class="input-wrap" :class="{ 'input-error': erroSenha }">
-              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <input id="senha" v-model="senha" :type="mostrarSenha ? 'text' : 'password'" placeholder="Mínimo 6 caracteres" autocomplete="new-password" @blur="validarSenha" />
-=======
             <div class="input-wrap" :class="{ 'input-error': erroEmail, 'input-valid': emailValido }">
               <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               <input id="email" v-model="email" type="email" placeholder="seu@email.com" autocomplete="email" @blur="validarEmail" @input="atualizarStep" />
@@ -197,36 +152,11 @@
             <div class="input-wrap" :class="{ 'input-error': erroSenha, 'input-valid': senhaValida }">
               <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               <input id="senha" v-model="senha" :type="mostrarSenha ? 'text' : 'password'" placeholder="••••••••" autocomplete="new-password" @blur="validarSenha" @input="atualizarStep" />
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
               <button type="button" class="toggle-senha" @click="mostrarSenha = !mostrarSenha" :aria-label="mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'">
                 <svg v-if="!mostrarSenha" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
               </button>
             </div>
-<<<<<<< HEAD
-            <span v-if="erroSenha" class="field-error">{{ erroSenha }}</span>
-          </div>
-
-          <!-- Força da senha -->
-          <div v-if="senha.length > 0" class="senha-forca">
-            <div class="forca-barra">
-              <div class="forca-fill" :class="forcaClasse" :style="{ width: forcaLargura }"></div>
-            </div>
-            <span class="forca-label" :class="forcaClasse">{{ forcaLabel }}</span>
-          </div>
-
-          <div class="field-group">
-            <label for="confirmarSenha">Confirmar Senha</label>
-            <div class="input-wrap" :class="{ 'input-error': erroConfirmarSenha }">
-              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <input id="confirmarSenha" v-model="confirmarSenha" :type="mostrarConfirmarSenha ? 'text' : 'password'" placeholder="Digite a senha novamente" autocomplete="new-password" @blur="validarConfirmarSenha" />
-              <button type="button" class="toggle-senha" @click="mostrarConfirmarSenha = !mostrarConfirmarSenha" :aria-label="mostrarConfirmarSenha ? 'Ocultar senha' : 'Mostrar senha'">
-                <svg v-if="!mostrarConfirmarSenha" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-              </button>
-            </div>
-            <span v-if="erroConfirmarSenha" class="field-error">{{ erroConfirmarSenha }}</span>
-=======
             <span v-if="erroSenha" class="field-error">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
               {{ erroSenha }}
@@ -247,7 +177,6 @@
               <span class="forca-label" :class="forcaClasse">{{ forcaLabel }}</span>
               <span class="forca-dica">{{ forcaDica }}</span>
             </div>
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
           </div>
 
           <div v-if="erroGeral" class="alert-error">
@@ -255,17 +184,12 @@
             {{ erroGeral }}
           </div>
 
-<<<<<<< HEAD
-          <button type="submit" class="btn-primary" :disabled="loading">
-            <span v-if="!loading">Criar conta</span>
-=======
           <button type="submit" class="btn-primary" :disabled="loading" :class="{ 'btn-success': sucesso }">
             <span v-if="sucesso" class="btn-loading">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
               Conta criada!
             </span>
             <span v-else-if="!loading">Criar minha conta</span>
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
             <span v-else class="btn-loading">
               <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
               Criando conta...
@@ -274,11 +198,6 @@
 
         </form>
 
-<<<<<<< HEAD
-        <p class="auth-switch">
-          Já tem uma conta?
-          <RouterLink to="/login">Entrar</RouterLink>
-=======
         <div class="divider"><span>ou</span></div>
 
         <p class="auth-switch">
@@ -289,7 +208,6 @@
         <p class="terms-note">
           Ao criar uma conta, você concorda com nossos
           <a href="#">Termos de Uso</a> e <a href="#">Política de Privacidade</a>.
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
         </p>
 
       </div>
@@ -299,24 +217,6 @@
 </template>
 
 <script setup>
-<<<<<<< HEAD
-import { ref, computed } from 'vue'
-import { useAuthStore } from '../stores/auth'
-
-const authStore    = useAuthStore()
-const nome         = ref('')
-const email        = ref('')
-const senha        = ref('')
-const confirmarSenha = ref('')
-const erroNome     = ref('')
-const erroEmail    = ref('')
-const erroSenha    = ref('')
-const erroConfirmarSenha = ref('')
-const erroGeral    = ref('')
-const loading      = ref(false)
-const mostrarSenha = ref(false)
-const mostrarConfirmarSenha = ref(false)
-=======
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 
@@ -347,7 +247,6 @@ function atualizarStep() {
   else if (nomeValido.value || emailValido.value) stepAtivo.value = 2
   else stepAtivo.value = 1
 }
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 
 const forca = computed(() => {
   const s = senha.value
@@ -361,25 +260,6 @@ const forca = computed(() => {
   return score
 })
 
-<<<<<<< HEAD
-const forcaLabel   = computed(() => ['', 'Fraca', 'Regular', 'Boa', 'Forte', 'Muito forte'][forca.value] || '')
-const forcaClasse  = computed(() => ['', 'fraca', 'regular', 'boa', 'forte', 'muito-forte'][forca.value] || '')
-const forcaLargura = computed(() => `${(forca.value / 5) * 100}%`)
-
-function validarNome()  { erroNome.value  = !nome.value.trim() ? 'Nome é obrigatório' : '' }
-function validarEmail() { erroEmail.value = !email.value ? 'E-mail é obrigatório' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value) ? 'E-mail inválido' : '' }
-function validarSenha() {
-  erroSenha.value = senha.value.length < 6 ? 'Mínimo 6 caracteres' : ''
-  if (confirmarSenha.value) validarConfirmarSenha()
-}
-function validarConfirmarSenha() {
-  erroConfirmarSenha.value = confirmarSenha.value !== senha.value ? 'As senhas não coincidem' : ''
-}
-
-async function handleCadastro() {
-  validarNome(); validarEmail(); validarSenha(); validarConfirmarSenha()
-  if (erroNome.value || erroEmail.value || erroSenha.value || erroConfirmarSenha.value) return
-=======
 const forcaLabel  = computed(() => ['', 'Fraca', 'Regular', 'Boa', 'Forte', 'Muito forte'][forca.value] || '')
 const forcaClasse = computed(() => ['', 'fraca', 'regular', 'boa', 'forte', 'muito-forte'][forca.value] || '')
 const forcaDica   = computed(() => {
@@ -397,18 +277,13 @@ function validarSenha() { erroSenha.value = senha.value.length < 6 ? 'Mínimo 6 
 async function handleCadastro() {
   validarNome(); validarEmail(); validarSenha()
   if (erroNome.value || erroEmail.value || erroSenha.value) return
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 
   erroGeral.value = ''
   loading.value   = true
   try {
-<<<<<<< HEAD
-    await authStore.register(nome.value, email.value, senha.value)
-=======
     await auth.value.register(nome.value, email.value, senha.value)
     sucesso.value = true
     stepAtivo.value = 3
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
   } catch (e) {
     erroGeral.value = e.response?.data?.erro || 'Erro ao criar conta. Tente novamente.'
   } finally {
@@ -420,19 +295,6 @@ async function handleCadastro() {
 <style scoped>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-<<<<<<< HEAD
-.auth-root { display: flex; min-height: 100dvh; font-family: 'Inter', sans-serif; background: #0b0d12; color: #e2e8f0; }
-
-.auth-panel { position: relative; display: flex; align-items: center; justify-content: center; width: 44%; min-height: 100dvh; background: linear-gradient(145deg, #0d1117 0%, #0f1923 50%, #091a18 100%); border-right: 1px solid rgba(255,255,255,0.06); overflow: hidden; padding: 3rem; }
-.auth-panel-inner { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 2.5rem; max-width: 380px; }
-.brand { display: flex; align-items: center; gap: 0.6rem; }
-.brand-name { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; color: #f0fdf9; }
-.panel-copy h1 { font-size: clamp(1.75rem, 2.8vw, 2.4rem); font-weight: 700; line-height: 1.2; letter-spacing: -0.03em; color: #f0fdf9; margin-bottom: 0.85rem; }
-.panel-copy p { font-size: 0.95rem; color: rgba(255,255,255,0.48); line-height: 1.65; max-width: 34ch; }
-.panel-features { display: flex; flex-direction: column; gap: 0.85rem; list-style: none; }
-.panel-features li { display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; color: rgba(255,255,255,0.55); }
-.feat-icon { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; background: rgba(13,148,136,0.15); color: #2dd4bf; border: 1px solid rgba(13,148,136,0.2); }
-=======
 /* ── Animação de entrada ── */
 .auth-root {
   display: flex;
@@ -539,33 +401,10 @@ async function handleCadastro() {
 }
 
 /* ── Glows ── */
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 .panel-glow { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 1; }
 .panel-glow-1 { width: 350px; height: 350px; background: radial-gradient(circle, rgba(13,148,136,0.18) 0%, transparent 70%); top: -80px; right: -80px; }
 .panel-glow-2 { width: 280px; height: 280px; background: radial-gradient(circle, rgba(6,182,212,0.1) 0%, transparent 70%); bottom: 60px; left: -60px; }
 
-<<<<<<< HEAD
-.auth-form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: 2.5rem 1.5rem; background: #0b0d12; }
-.auth-form-wrap { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 1.5rem; }
-.brand-mobile { display: none; }
-.form-header h2 { font-size: 1.55rem; font-weight: 700; letter-spacing: -0.025em; color: #f0fdf9; margin-bottom: 0.35rem; }
-.form-header p { font-size: 0.875rem; color: rgba(255,255,255,0.4); }
-
-.auth-form { display: flex; flex-direction: column; gap: 1rem; }
-.field-group { display: flex; flex-direction: column; gap: 0.45rem; }
-.field-group label { font-size: 0.8rem; font-weight: 500; color: rgba(255,255,255,0.55); letter-spacing: 0.01em; }
-.input-wrap { position: relative; display: flex; align-items: center; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.09); border-radius: 10px; transition: border-color 180ms ease, box-shadow 180ms ease; }
-.input-wrap:focus-within { border-color: rgba(13,148,136,0.6); box-shadow: 0 0 0 3px rgba(13,148,136,0.12); }
-.input-wrap.input-error { border-color: rgba(248,113,113,0.5); }
-.input-icon { flex-shrink: 0; margin-left: 0.9rem; color: rgba(255,255,255,0.28); pointer-events: none; }
-.input-wrap input { flex: 1; background: transparent; border: none; outline: none; padding: 0.8rem 0.9rem; font-size: 0.9rem; color: #e2e8f0; font-family: inherit; }
-.input-wrap input::placeholder { color: rgba(255,255,255,0.22); }
-.toggle-senha { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-right: 0.3rem; background: transparent; border: none; cursor: pointer; color: rgba(255,255,255,0.3); border-radius: 6px; transition: color 150ms ease, background 150ms ease; }
-.toggle-senha:hover { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.06); }
-.field-error { font-size: 0.775rem; color: #f87171; padding-left: 0.1rem; }
-
-/* ── Corrige autofill do navegador ── */
-=======
 /* ── Formulário lado direito ── */
 .auth-form-side {
   flex: 1;
@@ -689,33 +528,16 @@ async function handleCadastro() {
 @keyframes slideDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ── Autofill fix ── */
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 .input-wrap input:-webkit-autofill,
 .input-wrap input:-webkit-autofill:hover,
 .input-wrap input:-webkit-autofill:focus,
 .input-wrap input:-webkit-autofill:active {
-<<<<<<< HEAD
-  -webkit-box-shadow: 0 0 0 1000px #131519 inset !important;
-=======
   -webkit-box-shadow: 0 0 0 1000px #0f1117 inset !important;
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
   -webkit-text-fill-color: #e2e8f0 !important;
   caret-color: #e2e8f0;
   transition: background-color 9999s ease-in-out 0s;
 }
 
-<<<<<<< HEAD
-/* ── Força da senha ── */
-.senha-forca { display: flex; align-items: center; gap: 0.6rem; }
-.forca-barra { flex: 1; height: 4px; background: rgba(255,255,255,0.08); border-radius: 99px; overflow: hidden; }
-.forca-fill { height: 100%; border-radius: 99px; transition: width 300ms ease, background 300ms ease; }
-.forca-fill.fraca     { background: #f87171; }
-.forca-fill.regular   { background: #fb923c; }
-.forca-fill.boa       { background: #facc15; }
-.forca-fill.forte     { background: #4ade80; }
-.forca-fill.muito-forte { background: #2dd4bf; }
-.forca-label { font-size: 0.75rem; font-weight: 500; min-width: 70px; text-align: right; }
-=======
 /* ── Força da senha melhorada ── */
 .senha-forca { display: flex; flex-direction: column; gap: 0.4rem; }
 .forca-segmentos { display: flex; gap: 4px; }
@@ -732,21 +554,11 @@ async function handleCadastro() {
 
 .forca-info { display: flex; align-items: center; justify-content: space-between; }
 .forca-label { font-size: 0.72rem; font-weight: 600; }
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 .forca-label.fraca      { color: #f87171; }
 .forca-label.regular    { color: #fb923c; }
 .forca-label.boa        { color: #facc15; }
 .forca-label.forte      { color: #4ade80; }
 .forca-label.muito-forte { color: #2dd4bf; }
-<<<<<<< HEAD
-
-.alert-error { display: flex; align-items: center; gap: 0.5rem; padding: 0.7rem 0.9rem; border-radius: 8px; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); font-size: 0.83rem; color: #fca5a5; }
-
-.btn-primary { margin-top: 0.25rem; width: 100%; padding: 0.85rem; border: none; border-radius: 10px; background: #0d9488; color: #fff; font-size: 0.9rem; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 180ms ease, transform 100ms ease, box-shadow 180ms ease; box-shadow: 0 2px 12px rgba(13,148,136,0.3); }
-.btn-primary:hover:not(:disabled) { background: #0f766e; box-shadow: 0 4px 20px rgba(13,148,136,0.4); }
-.btn-primary:active:not(:disabled) { transform: translateY(1px); }
-.btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
-=======
 .forca-dica { font-size: 0.7rem; color: rgba(255,255,255,0.3); }
 
 /* ── Alerta de erro geral ── */
@@ -778,26 +590,10 @@ async function handleCadastro() {
 .btn-primary:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 8px rgba(13,148,136,0.25); }
 .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 .btn-primary.btn-success { background: linear-gradient(135deg, #16a34a, #0d9488); box-shadow: 0 4px 20px rgba(22,163,74,0.35); }
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 .btn-loading { display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 0.8s linear infinite; }
 
-<<<<<<< HEAD
-.auth-switch { text-align: center; font-size: 0.845rem; color: rgba(255,255,255,0.35); }
-.auth-switch a { color: #2dd4bf; text-decoration: none; font-weight: 500; transition: color 150ms ease; }
-.auth-switch a:hover { color: #5eead4; text-decoration: underline; }
-
-@media (max-width: 768px) {
-  .auth-root { flex-direction: column; }
-  .auth-panel { display: none; }
-  .brand-mobile { display: flex; justify-content: center; }
-  .auth-form-side { align-items: flex-start; padding: 2.5rem 1.5rem 3rem; }
-  .auth-form-wrap { max-width: 100%; gap: 1.5rem; }
-  .form-header { text-align: center; }
-}
-</style>
-=======
 /* ── Divider ── */
 .divider {
   display: flex; align-items: center; gap: 0.75rem;
@@ -828,4 +624,3 @@ async function handleCadastro() {
   .form-header { text-align: center; }
 }
 </style>
->>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
