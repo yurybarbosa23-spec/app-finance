@@ -1,10 +1,13 @@
-const express = require('express')
-const cors    = require('cors')
-const app     = express()
+const express  = require('express')
+const cors     = require('cors')
+
+const app = express()
 
 app.use(cors())
 app.use(express.json())
 
+// Rotas
+app.use('/api/ai',           require('./routes/aiRoutes'))
 app.use('/api/auth',         require('./routes/auth'))
 app.use('/api/accounts',     require('./routes/accounts'))
 app.use('/api/transactions', require('./routes/transactions'))

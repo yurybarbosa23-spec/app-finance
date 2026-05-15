@@ -1,6 +1,10 @@
+require('dotenv').config()
+
 const sequelize = require('./src/config/database')
 const app       = require('./src/app')
 const { User }  = require('./src/models')
+
+// ❌ removido: require('./src/telegram/bot')
 
 async function seedAdmin() {
   const bcrypt = require('bcryptjs')

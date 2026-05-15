@@ -87,7 +87,7 @@
             <div class="input-wrap" :class="{ 'input-error': erroSenha }">
               <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               <input id="senha" v-model="senha" :type="mostrarSenha ? 'text' : 'password'" placeholder="Mínimo 6 caracteres" autocomplete="new-password" @blur="validarSenha" />
-              <button type="button" class="toggle-senha" @click="mostrarSenha = !mostrarSenha">
+              <button type="button" class="toggle-senha" @click="mostrarSenha = !mostrarSenha" :aria-label="mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'">
                 <svg v-if="!mostrarSenha" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
               </button>
@@ -101,6 +101,19 @@
               <div class="forca-fill" :class="forcaClasse" :style="{ width: forcaLargura }"></div>
             </div>
             <span class="forca-label" :class="forcaClasse">{{ forcaLabel }}</span>
+          </div>
+
+          <div class="field-group">
+            <label for="confirmarSenha">Confirmar Senha</label>
+            <div class="input-wrap" :class="{ 'input-error': erroConfirmarSenha }">
+              <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <input id="confirmarSenha" v-model="confirmarSenha" :type="mostrarConfirmarSenha ? 'text' : 'password'" placeholder="Digite a senha novamente" autocomplete="new-password" @blur="validarConfirmarSenha" />
+              <button type="button" class="toggle-senha" @click="mostrarConfirmarSenha = !mostrarConfirmarSenha" :aria-label="mostrarConfirmarSenha ? 'Ocultar senha' : 'Mostrar senha'">
+                <svg v-if="!mostrarConfirmarSenha" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+            </div>
+            <span v-if="erroConfirmarSenha" class="field-error">{{ erroConfirmarSenha }}</span>
           </div>
 
           <div v-if="erroGeral" class="alert-error">
@@ -133,16 +146,19 @@
 import { ref, computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 
-const auth         = ref(useAuthStore())
+const authStore    = useAuthStore()
 const nome         = ref('')
 const email        = ref('')
 const senha        = ref('')
+const confirmarSenha = ref('')
 const erroNome     = ref('')
 const erroEmail    = ref('')
 const erroSenha    = ref('')
+const erroConfirmarSenha = ref('')
 const erroGeral    = ref('')
 const loading      = ref(false)
 const mostrarSenha = ref(false)
+const mostrarConfirmarSenha = ref(false)
 
 const forca = computed(() => {
   const s = senha.value
@@ -162,16 +178,22 @@ const forcaLargura = computed(() => `${(forca.value / 5) * 100}%`)
 
 function validarNome()  { erroNome.value  = !nome.value.trim() ? 'Nome é obrigatório' : '' }
 function validarEmail() { erroEmail.value = !email.value ? 'E-mail é obrigatório' : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value) ? 'E-mail inválido' : '' }
-function validarSenha() { erroSenha.value = senha.value.length < 6 ? 'Mínimo 6 caracteres' : '' }
+function validarSenha() {
+  erroSenha.value = senha.value.length < 6 ? 'Mínimo 6 caracteres' : ''
+  if (confirmarSenha.value) validarConfirmarSenha()
+}
+function validarConfirmarSenha() {
+  erroConfirmarSenha.value = confirmarSenha.value !== senha.value ? 'As senhas não coincidem' : ''
+}
 
 async function handleCadastro() {
-  validarNome(); validarEmail(); validarSenha()
-  if (erroNome.value || erroEmail.value || erroSenha.value) return
+  validarNome(); validarEmail(); validarSenha(); validarConfirmarSenha()
+  if (erroNome.value || erroEmail.value || erroSenha.value || erroConfirmarSenha.value) return
 
   erroGeral.value = ''
   loading.value   = true
   try {
-    await auth.value.register(nome.value, email.value, senha.value)
+    await authStore.register(nome.value, email.value, senha.value)
   } catch (e) {
     erroGeral.value = e.response?.data?.erro || 'Erro ao criar conta. Tente novamente.'
   } finally {
