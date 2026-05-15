@@ -1,7 +1,13 @@
 // backend/src/routes/transfers.js
+<<<<<<< HEAD
 const express = require('express')
 const router = express.Router()
 const { Op } = require('sequelize')
+=======
+const express        = require('express')
+const router         = express.Router()
+const { Op }         = require('sequelize')
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 const authMiddleware = require('../middlewares/auth')
 const { Account, Transaction, User, sequelize } = require('../models')
 
@@ -10,6 +16,7 @@ router.get('/destinatarios', authMiddleware, async (req, res) => {
   try {
     const termo = (req.query.q || '').trim()
     const whereUser = termo
+<<<<<<< HEAD
       ? {
           [Op.or]: [
             { nome: { [Op.like]: `%${termo}%` } },
@@ -17,6 +24,10 @@ router.get('/destinatarios', authMiddleware, async (req, res) => {
           ],
         }
       : {}
+=======
+      ? { [Op.or]: [{ nome: { [Op.like]: `%${termo}%` } }, { email: { [Op.like]: `%${termo}%` } }] }
+      : undefined
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 
     const contas = await Account.findAll({
       where: { userId: { [Op.ne]: req.userId } },
@@ -25,6 +36,7 @@ router.get('/destinatarios', authMiddleware, async (req, res) => {
       order: [['id', 'ASC']],
     })
 
+<<<<<<< HEAD
     return res.json(
       contas.map(conta => ({
         contaId: conta.id,
@@ -36,6 +48,17 @@ router.get('/destinatarios', authMiddleware, async (req, res) => {
         label: `${conta.User.nome} - ${conta.banco} (${conta.nome})`,
       }))
     )
+=======
+    return res.json(contas.map(conta => ({
+      contaId:      conta.id,
+      userId:       conta.User.id,
+      nomeUsuario:  conta.User.nome,
+      emailUsuario: conta.User.email,
+      nomeConta:    conta.nome,
+      banco:        conta.banco,
+      label:        `${conta.User.nome} - ${conta.banco} (${conta.nome})`,
+    })))
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
   } catch (err) {
     console.error('Erro ao buscar destinatários:', err)
     return res.status(500).json({ erro: 'Erro ao buscar destinatários' })
@@ -55,8 +78,14 @@ router.post('/', authMiddleware, async (req, res) => {
   const t = await sequelize.transaction()
 
   try {
+<<<<<<< HEAD
     const contaOrigem = await Account.findOne({
       where: { id: contaOrigemId, userId: req.userId },
+=======
+    // ✅ SEM include nem lock: true — compatível com PostgreSQL
+    const contaOrigem = await Account.findOne({
+      where:       { id: contaOrigemId, userId: req.userId },
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
       transaction: t,
     })
 
@@ -83,7 +112,11 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     // Buscar nomes dos usuários separadamente (sem lock)
+<<<<<<< HEAD
     const userOrigem = await User.findByPk(req.userId, { attributes: ['nome'] })
+=======
+    const userOrigem  = await User.findByPk(req.userId,          { attributes: ['nome'] })
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
     const userDestino = await User.findByPk(contaDestino.userId, { attributes: ['nome'] })
 
     await contaOrigem.update(
@@ -96,6 +129,7 @@ router.post('/', authMiddleware, async (req, res) => {
       { transaction: t }
     )
 
+<<<<<<< HEAD
     const hoje = new Date().toISOString().split('T')[0]
     const desc = descricao || 'Transferência'
     const nomeDestinatario = userDestino?.nome || contaDestino.banco || contaDestino.nome
@@ -131,6 +165,38 @@ router.post('/', authMiddleware, async (req, res) => {
 
     await t.commit()
     return res.json({ mensagem: 'Transferência realizada com sucesso' })
+=======
+    const hoje             = new Date().toISOString().split('T')[0]
+    const desc             = descricao || 'Transferência'
+    const nomeDestinatario = userDestino?.nome || contaDestino.banco || contaDestino.nome
+    const bancoDestino     = contaDestino.banco || contaDestino.nome
+    const nomeRemetente    = userOrigem?.nome  || contaOrigem.banco  || contaOrigem.nome
+    const bancoOrigem      = contaOrigem.banco || contaOrigem.nome
+
+    await Transaction.create({
+      tipo:      'despesa',
+      categoria: 'transferencia',
+      descricao: `${desc} → ${nomeDestinatario} (${bancoDestino})`,
+      valor:     Number(valor),
+      data:      hoje,
+      accountId: contaOrigem.id,
+      userId:    req.userId,
+    }, { transaction: t })
+
+    await Transaction.create({
+      tipo:      'receita',
+      categoria: 'transferencia',
+      descricao: `${desc} ← ${nomeRemetente} (${bancoOrigem})`,
+      valor:     Number(valor),
+      data:      hoje,
+      accountId: contaDestino.id,
+      userId:    contaDestino.userId,
+    }, { transaction: t })
+
+    await t.commit()
+    return res.json({ mensagem: 'Transferência realizada com sucesso' })
+
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
   } catch (err) {
     await t.rollback()
     console.error('Erro na transferência:', err)

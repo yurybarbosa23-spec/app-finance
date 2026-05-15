@@ -16,7 +16,10 @@
     "dotenv": "^16.0.0",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.0",
+<<<<<<< HEAD
     "node-telegram-bot-api": "^0.67.0",
+=======
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
     "pg": "^8.20.0",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.35.0",

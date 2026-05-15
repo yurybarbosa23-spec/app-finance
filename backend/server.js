@@ -1,11 +1,17 @@
+<<<<<<< HEAD
 require('dotenv').config()
 
+=======
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 const sequelize = require('./src/config/database')
 const app       = require('./src/app')
 const { User }  = require('./src/models')
 
+<<<<<<< HEAD
 // ❌ removido: require('./src/telegram/bot')
 
+=======
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 async function seedAdmin() {
   const bcrypt = require('bcryptjs')
   const admin  = await User.findOne({ where: { email: 'admin@financeapp.com' } })

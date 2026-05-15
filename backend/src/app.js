@@ -1,13 +1,22 @@
+<<<<<<< HEAD
 const express  = require('express')
 const cors     = require('cors')
 
 const app = express()
+=======
+const express = require('express')
+const cors    = require('cors')
+const app     = express()
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 
 app.use(cors())
 app.use(express.json())
 
+<<<<<<< HEAD
 // Rotas
 app.use('/api/ai',           require('./routes/aiRoutes'))
+=======
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 app.use('/api/auth',         require('./routes/auth'))
 app.use('/api/accounts',     require('./routes/accounts'))
 app.use('/api/transactions', require('./routes/transactions'))

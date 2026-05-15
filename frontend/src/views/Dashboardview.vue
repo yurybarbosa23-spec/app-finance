@@ -319,15 +319,22 @@ onMounted(async () => {
   await budgets.carregar()
   saldoExibido.value = Number(accounts.saldoTotal || 0)
   appCarregando.value = false
+<<<<<<< HEAD
   // Polling a cada 8 segundos — atualiza tudo (saldo + extrato + métricas)
   pollingInterval = setInterval(sincronizarDados, 5000)
+=======
+  pollingInterval = setInterval(sincronizarSaldo, 5000)
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 })
 
 onUnmounted(() => {
   if (pollingInterval) clearInterval(pollingInterval)
 })
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
 // ── Ações existentes
 function fecharLancamento() {
   modalLancamento.value = false
@@ -577,6 +584,7 @@ function debounceUsuarios() {
   buscandoUsuarios.value = true
   debounceTimerTransf = setTimeout(async () => {
     try {
+<<<<<<< HEAD
       const { data } = await api.get('/transfers/destinatarios', {
         params: { q: buscaUsuario.value }
       })
@@ -599,6 +607,12 @@ function debounceUsuarios() {
       })
       
       const filtrados = Object.values(usersMap).filter(u => u.id !== auth.user?.id)
+=======
+      const { data } = await api.get('/auth/search', {
+        params: { q: buscaUsuario.value }
+      })
+      const filtrados = data.filter(u => u.id !== auth.user?.id)
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
       usuariosEncontrados.value = filtrados
       // Merge em recentes para aparecer na lista inicial também
       filtrados.forEach(u => {
@@ -606,8 +620,12 @@ function debounceUsuarios() {
           usuariosRecentes.value.push(u)
         }
       })
+<<<<<<< HEAD
     } catch (err) {
       console.error('Erro na busca de usuários:', err)
+=======
+    } catch {
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
       usuariosEncontrados.value = []
     } finally {
       buscandoUsuarios.value = false
@@ -618,9 +636,19 @@ function debounceUsuarios() {
 async function selecionarUsuarioDestino(usuario) {
   formTransf.value.usuarioDestinoId = usuario.id
   formTransf.value.contaExternaId   = ''
+<<<<<<< HEAD
   contasUsuarioDestino.value        = usuario._contas || []
   if (contasUsuarioDestino.value.length === 1) {
     formTransf.value.contaExternaId = contasUsuarioDestino.value[0].id
+=======
+  contasUsuarioDestino.value         = []
+  try {
+    const { data } = await api.get(`/accounts/user/${usuario.id}`)
+    contasUsuarioDestino.value = data
+    if (data.length === 1) formTransf.value.contaExternaId = data[0].id
+  } catch {
+    mostrarToast('❌ Erro ao buscar contas do usuário')
+>>>>>>> 125463cd2bd430535f328a5159d59077cf3c9db0
   }
 }
 
