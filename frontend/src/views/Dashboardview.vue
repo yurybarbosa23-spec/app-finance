@@ -6,7 +6,12 @@ import { useTransactionsStore } from '../stores/transactions'
 import { useBudgetsStore }     from '../stores/budgets'
 import { useItemsStore }        from '../stores/items'
 import { useCurrency }          from '../composables/useCurrency'
+import { useParallax }          from '../composables/useParallax'
 import api from '../services/api'
+
+const { tilt, glow, globalGlow } = useParallax()
+const saudacao = computed(() => { const h = new Date().getHours(); return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite' })
+const dataHoje = computed(() => new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }))
 
 
 const auth     = useAuthStore()
@@ -43,6 +48,66 @@ const loadingGlobal      = ref(false)
 const loadingMsg         = ref('Carregando...')
 const itemParaVenda      = ref(null)
 const contaParaDel       = ref(null)
+
+// ── Finora IA Chat
+const showFinoraChat = ref(false)
+const finoraInput = ref('')
+const finoraMessages = ref([
+  { role: 'bot', text: 'Olá! Sou a Finora, sua assistente financeira inteligente. Posso analisar seus gastos, sugerir investimentos ou explicar tendências. Como posso te ajudar hoje?' }
+])
+async function sendFinoraMessage() {
+  const userMsg = finoraInput.value.trim()
+  if (!userMsg) return
+  finoraMessages.value.push({ role: 'user', text: userMsg })
+  finoraInput.value = ''
+  
+  finoraMessages.value.push({ role: 'bot', text: '', loading: true })
+  const botMsgIndex = finoraMessages.value.length - 1
+  
+  const scrollChat = () => {
+    const chatBody = document.querySelector('.finora-chat-body')
+    if (chatBody) chatBody.scrollTop = chatBody.scrollHeight
+  }
+  setTimeout(scrollChat, 50)
+
+  try {
+    const token = localStorage.getItem('token') || ''
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    
+    const historico = finoraMessages.value
+      .slice(1, -2)
+      .filter(m => m.text)
+      .map(m => ({ role: m.role === 'bot' ? 'assistant' : 'user', content: m.text }))
+    
+    const res = await fetch('http://localhost:3000/api/ai/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ mensagem: userMsg, userId: user.id, historico })
+    })
+    
+    if (!res.ok) {
+      finoraMessages.value[botMsgIndex].loading = false
+      finoraMessages.value[botMsgIndex].text = '❌ Erro ao processar solicitação.'
+      return
+    }
+    
+    const data = await res.json()
+    finoraMessages.value[botMsgIndex].loading = false
+    finoraMessages.value[botMsgIndex].text = data.text
+    scrollChat()
+  } catch (err) {
+    finoraMessages.value[botMsgIndex].loading = false
+    finoraMessages.value[botMsgIndex].text = '❌ Erro: Não foi possível conectar ao Ollama local.'
+  }
+}
+
+function formatFinoraMessage(text) {
+  if (!text) return ''
+  return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>')
+}
 
 // ── Refs inputs
 const inputValor      = ref(null)
@@ -885,1424 +950,912 @@ const contasOrigemTransf = computed(() =>
 </script>
 
 <template>
-  <!-- App carregando -->
-  <div v-if="appCarregando" class="fixed inset-0 bg-[#0b0d12] flex items-center justify-center z-50">
-    <div class="flex flex-col items-center gap-3">
-      <div class="w-10 h-10 border-2 border-teal-400/30 border-t-teal-400 rounded-full animate-spin"></div>
-      <p class="text-gray-400 text-sm">Carregando...</p>
-    </div>
+<div v-if="appCarregando" class="ios-splash"><div class="ios-splash-inner"><div class="ios-spinner"></div><p style="color:rgba(235,235,245,.6);font-size:.875rem;margin-top:1rem">Carregando...</p></div></div>
+<Transition name="ios-toast"><div v-if="toast.visivel" class="ios-toast">{{ toast.mensagem }}</div></Transition>
+<Transition name="fade"><div v-if="loadingGlobal" class="ios-overlay"><div class="ios-loading-card"><div class="ios-spinner"></div><span>{{ loadingMsg }}</span></div></div></Transition>
+
+<div class="ios-app" :style="globalGlow()">
+<header class="ios-header">
+  <div class="ios-header-left">
+    <div class="ios-logo">💰</div>
+    <span class="ios-header-title" style="font-weight: 800; font-size: 1.1rem; margin-left: 0.5rem; display: none;">FinanceApp</span>
   </div>
 
-  <!-- Toast -->
-  <Transition name="toast-slide">
-    <div v-if="toast.visivel"
-      class="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] bg-[#1c1f2e] border border-white/10 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold backdrop-blur-xl max-w-xs text-center whitespace-nowrap">
-      {{ toast.mensagem }}
-    </div>
-  </Transition>
-
-  <!-- Loading global -->
-  <Transition name="fade">
-    <div v-if="loadingGlobal" style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;">
-      <div class="bg-[#1c1f2e] border border-white/10 rounded-2xl px-8 py-6 flex items-center gap-4 shadow-2xl">
-        <div class="w-6 h-6 border-2 border-teal-400/30 border-t-teal-400 rounded-full animate-spin"></div>
-        <span class="text-sm text-gray-300 font-medium">{{ loadingMsg }}</span>
-      </div>
-    </div>
-  </Transition>
-
-  <div class="min-h-dvh bg-[#0b0d12] text-white flex flex-col overflow-x-hidden">
-
-    <!-- ── HEADER ── -->
-    <header class="bg-[#0b0d12]/95 backdrop-blur-xl border-b border-white/5 px-4 h-14 flex items-center justify-between sticky top-0 z-40 lg:pl-72 min-w-0">
-      <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-teal-500/30 flex-shrink-0">
-          <span class="text-base leading-none">💰</span>
-        </div>
-        <span class="font-black tracking-tight text-sm hidden sm:block">FinanceApp</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="flex items-center gap-2 bg-white/5 border border-white/8 px-3 py-1.5 rounded-xl">
-          <div class="w-6 h-6 rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-xs font-black text-white flex-shrink-0">
-            {{ auth.nome?.charAt(0).toUpperCase() }}
-          </div>
-          <span class="text-sm text-gray-300 font-medium hidden sm:block max-w-[120px] truncate">{{ auth.nome }}</span>
-        </div>
-        <button @click="auth.logout()"
-          class="text-xs text-gray-500 hover:text-red-400 bg-white/5 hover:bg-red-500/10 border border-white/5 hover:border-red-500/20 px-3 py-1.5 rounded-xl transition-all">
-          Sair
-        </button>
-      </div>
-    </header>
-
-    <!-- ── SIDEBAR (desktop) ── -->
-    <aside class="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-[#0e1017] border-r border-white/5 z-30 pt-14">
-      <div class="flex-1 p-4 space-y-1 overflow-y-auto">
-        <p class="text-[10px] text-gray-600 font-black uppercase tracking-widest px-3 mb-3">Menu</p>
-        <button v-for="item in navItems" :key="item.val" @click="aba = item.val"
-          :class="aba === item.val
-            ? 'bg-teal-500/10 border-teal-500/30 text-teal-400'
-            : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'"
-          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all">
-          <span class="text-lg leading-none">{{ item.icon }}</span>
-          {{ item.label }}
-        </button>
-
-        <div class="pt-4 border-t border-white/5 mt-4 space-y-1">
-          <p class="text-[10px] text-gray-600 font-black uppercase tracking-widest px-3 mb-3">Ações Rápidas</p>
-          <button @click="abrirTransferenciaStep()"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent text-gray-500 hover:text-blue-400 hover:bg-blue-500/5 text-sm font-semibold transition-all">
-            <span class="text-lg leading-none">🔄</span> Transferir
-          </button>
-          <button @click="modalLancamento = true; passoLancamento = 1"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent text-gray-500 hover:text-teal-400 hover:bg-teal-500/5 text-sm font-semibold transition-all">
-            <span class="text-lg leading-none">⚡</span> Lançamento
-          </button>
-          <button @click="modalConta = true"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5 text-sm font-semibold transition-all">
-            <span class="text-lg leading-none">🏦</span> Nova Conta
-          </button>
-          <button @click="modalAlertas = true"
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-transparent text-gray-500 hover:text-yellow-400 hover:bg-yellow-500/5 text-sm font-semibold transition-all">
-            <span class="text-lg leading-none">🔔</span> Alertas
-          </button>
-        </div>
-      </div>
-    </aside>
-
-    <!-- ── MAIN CONTENT ── -->
-    <main class="flex-1 min-w-0 overflow-x-hidden px-3 pt-5 pb-28 lg:ml-64 lg:px-8 lg:pb-8">
-
-      <div v-show="aba === 'inicio'" class="space-y-4">
-
-        <div class="relative overflow-hidden rounded-3xl p-6 shadow-2xl transition-all duration-700 bg-gradient-to-br border"
-          :class="[
-            temaSaldo.fundo, 
-            temaSaldo.sombra, 
-            temaSaldo.borda,
-            saldoAnimando==='up'?'ring-2 ring-green-400 ring-offset-2 ring-offset-[#0b0d12]':saldoAnimando==='down'?'ring-2 ring-red-400 ring-offset-2 ring-offset-[#0b0d12]':''
-          ]">
-          
-          <div class="absolute inset-0 opacity-[0.15]" style="background-image: radial-gradient(#fff 1px, transparent 1px); background-size: 16px 16px;"></div>
-          <div class="absolute -top-12 -right-12 w-56 h-56 rounded-full bg-white/10 blur-3xl pointer-events-none transition-colors duration-700"></div>
-          <div class="absolute -bottom-8 -left-8 w-40 h-40 rounded-full bg-black/20 blur-2xl pointer-events-none transition-colors duration-700"></div>
-
-          <div class="relative flex items-start justify-between mb-4 z-10">
-            <div>
-              <p class="text-xs font-bold uppercase tracking-widest mb-0.5 opacity-70" :class="temaSaldo.texto">Saldo Total</p>
-              <p class="text-xs opacity-60" :class="temaSaldo.texto">{{ accounts.contas.length }} conta(s) ativa(s)</p>
-            </div>
-            <div class="flex items-center gap-1 bg-black/20 border border-white/10 backdrop-blur-sm rounded-xl px-3 py-1.5 shadow-inner">
-              <span class="text-xs font-semibold capitalize" :class="temaSaldo.texto">{{ mesAtual }} 📅</span>
-            </div>
-          </div>
-
-          <div class="relative mb-5 z-10">
-            <h2 class="text-4xl sm:text-5xl font-black tracking-tight tabular-nums transition-all duration-700 text-white"
-              :class="saldoAnimando==='up'?'drop-shadow-[0_0_24px_rgba(74,222,128,0.8)] scale-105':saldoAnimando==='down'?'drop-shadow-[0_0_24px_rgba(248,113,113,0.8)] scale-95':''">
-              {{ formatar(saldoExibido) }}
-            </h2>
-            <Transition name="diff-badge">
-              <div v-if="diffVisivel"
-                :class="diffValor>=0?'bg-green-500/20 text-green-300 border-green-400/40':'bg-red-500/20 text-red-300 border-red-400/40'"
-                class="absolute -right-2 top-2 flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-black backdrop-blur-md shadow-lg">
-                {{ diffValor>=0?'📈':'📉' }} {{ diffValor>=0?'+':'' }}{{ formatar(diffValor) }}
-              </div>
-            </Transition>
-          </div>
-
-          <div class="relative mb-5 z-10">
-            <div class="h-2 rounded-full bg-black/30 overflow-hidden backdrop-blur-sm shadow-inner">
-              <div class="h-full rounded-full transition-all duration-1000 ease-out" 
-                   :class="pctEntradas > 50 ? 'bg-gradient-to-r from-green-400 to-teal-300' : 'bg-gradient-to-r from-amber-400 to-red-400'"
-                   :style="{width: pctEntradas+'%'}">
-              </div>
-            </div>
-            <div class="flex justify-between mt-2 text-[11px] font-semibold opacity-80" :class="temaSaldo.texto">
-              <span class="flex items-center gap-1">⬆ Entradas: {{ formatar(totalEntradas) }}</span>
-              <span class="flex items-center gap-1">⬇ Saídas: {{ formatar(totalSaidas) }}</span>
-            </div>
-          </div>
-
-          <!-- ── BOTÕES LADO A LADO ── -->
-          <div class="relative z-10 grid grid-cols-3 gap-2">
-            <button @click="modalAlertas=true"
-              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
-              <span class="text-lg group-hover:scale-125 transition-transform">🔔</span> Alertas
-            </button>
-            <button @click="abrirTransferenciaStep()"
-              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
-              <span class="text-lg group-hover:scale-125 transition-transform">🔄</span> Transferir
-            </button>
-            <button @click="modalLancamento=true; passoLancamento=1"
-              class="relative bg-white/10 hover:bg-white/20 active:bg-black/10 border border-white/20 backdrop-blur-md py-3.5 rounded-2xl text-sm font-black text-white transition-all duration-300 flex items-center justify-center gap-2 overflow-hidden group">
-              <div class="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
-              <span class="text-lg group-hover:scale-125 transition-transform">⚡</span> Lançamento Rápido
-            </button>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-3">
-          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all cursor-pointer" @click="aba='historico'; filtroAtivo='receita'; subAbaHistorico='lancamentos'">
-            <div class="w-8 h-8 rounded-xl bg-green-500/15 flex items-center justify-center text-sm mb-3">⬆️</div>
-            <p class="text-xs text-gray-500 mb-1">Entradas</p>
-            <p class="font-black text-green-400 text-sm sm:text-base tabular-nums">{{ formatar(totalEntradas) }}</p>
-          </div>
-          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all cursor-pointer" @click="aba='historico'; filtroAtivo='despesa'; subAbaHistorico='lancamentos'">
-            <div class="w-8 h-8 rounded-xl bg-red-500/15 flex items-center justify-center text-sm mb-3">⬇️</div>
-            <p class="text-xs text-gray-500 mb-1">Saídas</p>
-            <p class="font-black text-red-400 text-sm sm:text-base tabular-nums">{{ formatar(totalSaidas) }}</p>
-          </div>
-          <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5 hover:border-white/10 transition-all">
-            <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm mb-3" :class="balanco>=0?'bg-teal-500/15':'bg-red-500/15'">⚖️</div>
-            <p class="text-xs text-gray-500 mb-1">Balanço</p>
-            <p class="font-black text-sm sm:text-base tabular-nums" :class="balanco>=0?'text-teal-400':'text-red-400'">{{ formatar(balanco) }}</p>
-          </div>
-        </div>
-
-        <div v-if="accounts.contas.length > 0" class="bg-[#13161f] rounded-2xl border border-white/5 overflow-hidden">
-          <div class="px-4 py-3 flex items-center justify-between border-b border-white/5">
-            <p class="text-sm font-bold">🏦 Minhas Contas</p>
-            <button @click="aba='contas'" class="text-teal-400 text-xs hover:underline">Gerenciar →</button>
-          </div>
-          <div class="divide-y divide-white/5">
-            <div v-for="conta in accounts.contas" :key="conta.id" class="flex items-center gap-3 px-4 py-3">
-              <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                :style="{background:conta.cor+'22',color:conta.cor}">
-                {{ conta.banco.charAt(0).toUpperCase() }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-semibold">{{ conta.banco }}</p>
-                <div class="h-1 rounded-full bg-white/5 mt-1.5">
-                  <div class="h-1 rounded-full transition-all duration-700" :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div>
-                </div>
-              </div>
-              <p class="font-black text-sm tabular-nums flex-shrink-0" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
-            </div>
-          </div>
-        </div>
-        <div v-else class="bg-[#13161f] rounded-2xl border border-dashed border-white/10 p-8 text-center">
-          <p class="text-3xl mb-2">🏦</p>
-          <p class="text-gray-500 text-sm mb-3">Nenhuma conta ainda</p>
-          <button @click="modalConta=true" class="text-teal-400 text-sm font-semibold hover:underline">+ Adicionar conta</button>
-        </div>
-
-
-        <!-- ── ALERTAS DE ORÇAMENTO ── -->
-        <div v-if="budgets.budgets.filter(b=>b.ativo).length > 0">
-          <!-- Alertas ultrapassados (vermelho) -->
-          <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual >= b.limite)" :key="'alerta-'+b.id"
-            class="bg-[#13161f] rounded-2xl border border-red-500/30 overflow-hidden mb-3">
-            <div class="px-4 py-3 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center text-base flex-shrink-0">
-                {{ emojiCat[b.categoria] || '⚠️' }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-0.5">
-                  <p class="text-sm font-bold text-red-400">🚨 Limite ultrapassado!</p>
-                  <span class="text-xs bg-red-500/15 text-red-400 px-2 py-0.5 rounded-full font-semibold">{{ labelCat[b.categoria] || b.categoria }}</span>
-                </div>
-                <p class="text-xs text-gray-400">
-                  Você gastou <span class="text-red-400 font-black tabular-nums">{{ formatar(b.gastoAtual) }}</span>
-                  de <span class="text-gray-300 font-semibold tabular-nums">{{ formatar(b.limite) }}</span> este mês
-                </p>
-                <div class="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <div class="h-full rounded-full bg-red-500 transition-all duration-700"
-                    :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
-                </div>
-              </div>
-              <button @click="modalAlertas=true" class="text-gray-600 hover:text-gray-400 text-xs flex-shrink-0">⚙️</button>
-            </div>
-          </div>
-
-          <!-- Alertas de aviso (amarelo, 70%-99%) -->
-          <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual >= b.limite*0.7 && b.gastoAtual < b.limite)" :key="'aviso-'+b.id"
-            class="bg-[#13161f] rounded-2xl border border-amber-500/30 overflow-hidden mb-3">
-            <div class="px-4 py-3 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center text-base flex-shrink-0">
-                {{ emojiCat[b.categoria] || '⚠️' }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-0.5">
-                  <p class="text-sm font-bold text-amber-400">⚠️ Atenção!</p>
-                  <span class="text-xs bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full font-semibold">{{ labelCat[b.categoria] || b.categoria }}</span>
-                </div>
-                <p class="text-xs text-gray-400">
-                  Você gastou <span class="text-amber-400 font-black tabular-nums">{{ formatar(b.gastoAtual) }}</span>
-                  de <span class="text-gray-300 font-semibold tabular-nums">{{ formatar(b.limite) }}</span> este mês
-                  <span class="text-amber-500">({{ Math.round((b.gastoAtual/b.limite)*100) }}%)</span>
-                </p>
-                <div class="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <div class="h-full rounded-full bg-amber-500 transition-all duration-700"
-                    :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
-                </div>
-              </div>
-              <button @click="modalAlertas=true" class="text-gray-600 hover:text-gray-400 text-xs flex-shrink-0">⚙️</button>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="items.itens.filter(i=>i.status==='disponivel').length > 0"
-          class="bg-[#13161f] rounded-2xl border border-amber-500/20 overflow-hidden">
-          <div class="px-4 py-3 flex items-center justify-between border-b border-white/5">
-            <p class="text-sm font-bold text-amber-400">📦 À venda <span class="text-amber-400/60 font-normal">({{ items.itens.filter(i=>i.status==='disponivel').length }})</span></p>
-            <button @click="aba='inventario'" class="text-amber-400 text-xs hover:underline">Ver tudo →</button>
-          </div>
-          <div class="divide-y divide-white/5">
-            <div v-for="item in items.itens.filter(i=>i.status==='disponivel').slice(0,3)" :key="item.id"
-              class="flex items-center gap-3 px-4 py-3">
-              <span class="text-xl">📦</span>
-              <p class="flex-1 text-sm font-medium truncate">{{ item.nome }}</p>
-              <div class="flex items-center gap-2">
-                <p class="text-amber-400 font-black text-sm tabular-nums">{{ formatar(item.valor) }}</p>
-                <button @click="abrirVenda(item)" class="text-xs bg-teal-500/15 text-teal-400 hover:bg-teal-500/25 px-2.5 py-1.5 rounded-xl transition-all font-semibold">Vender</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-show="aba === 'contas'" class="space-y-4">
-        <div class="flex items-center justify-between">
-          <p class="font-black text-base">🏦 Contas</p>
-          <div class="flex items-center gap-2">
-            <button @click="abrirTransferenciaStep()"
-              class="bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 border border-blue-500/20 text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center gap-1.5">
-              🔄 Transferir
-            </button>
-            <button @click="modalConta=true" class="bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-lg shadow-teal-500/20">+ Nova Conta</button>
-          </div>
-        </div>
-
-        <div v-if="accounts.contas.length > 0" class="bg-gradient-to-r from-teal-500/10 to-cyan-500/10 border border-teal-500/20 rounded-2xl p-4 flex items-center justify-between">
-          <p class="text-sm text-teal-300/70">Total consolidado</p>
-          <p class="font-black text-xl text-teal-400 tabular-nums">{{ formatar(accounts.saldoTotal) }}</p>
-        </div>
-
-        <div v-if="accounts.contas.length===0" class="bg-[#13161f] rounded-2xl p-12 border border-white/5 text-center">
-          <p class="text-4xl mb-3">🏦</p>
-          <p class="text-gray-500 text-sm mb-3">Nenhuma conta ainda.</p>
-          <button @click="modalConta=true" class="text-teal-400 text-sm hover:underline">Adicionar →</button>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div v-for="conta in accounts.contas" :key="conta.id"
-            class="bg-[#13161f] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-all group relative overflow-hidden">
-            <div class="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl" :style="{backgroundColor:conta.cor}"></div>
-            <div class="flex items-center justify-between mb-5">
-              <div class="flex items-center gap-3">
-                <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-xl font-black"
-                  :style="{background:conta.cor+'18',color:conta.cor}">
-                  {{ conta.banco.charAt(0).toUpperCase() }}
-                </div>
-                <div>
-                  <p class="font-bold text-sm">{{ conta.banco }}</p>
-                  <p class="text-gray-600 text-xs">Conta bancária</p>
-                </div>
-              </div>
-              <button @click="confirmarDel(conta)"
-                class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-all text-sm">✕</button>
-            </div>
-            <p class="text-3xl font-black tabular-nums" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
-            <div class="mt-4">
-              <div class="flex justify-between text-xs text-gray-600 mb-1.5">
-                <span>Participação</span>
-                <span class="font-semibold">{{ accounts.saldoTotal>0 ? Math.round((conta.saldo/accounts.saldoTotal)*100) : 0 }}%</span>
-              </div>
-              <div class="h-1.5 rounded-full bg-white/5">
-                <div class="h-1.5 rounded-full transition-all duration-700"
-                  :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-show="aba === 'historico'" class="space-y-4">
-        <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
-          <button @click="subAbaHistorico='lancamentos'"
-            :class="subAbaHistorico==='lancamentos'?'bg-teal-500 text-white shadow':'text-gray-500 hover:text-white'"
-            class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all">
-            📋 Lançamentos
-          </button>
-          <button @click="subAbaHistorico='metricas'"
-            :class="subAbaHistorico==='metricas'?'bg-violet-600 text-white shadow shadow-violet-500/20':'text-gray-500 hover:text-white'"
-            class="flex-1 py-2.5 rounded-xl text-xs font-black transition-all">
-            📊 Métricas
-          </button>
-        </div>
-
-        <div v-show="subAbaHistorico==='lancamentos'" class="space-y-4">
-          <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
-            <button v-for="f in filtros" :key="f.val" @click="filtroAtivo=f.val"
-              :class="filtroAtivo===f.val?'bg-teal-500 text-white shadow':'text-gray-500 hover:text-white'"
-              class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all">
-              {{ f.label }}
-            </button>
-          </div>
-          <div class="flex items-center justify-between bg-[#13161f] border border-white/5 rounded-2xl px-4 py-3">
-            <span class="text-xs text-gray-500">
-              {{ filtroAtivo==='todos'?'Todas as movimentações':filtroAtivo==='receita'?'Entradas':'Saídas' }}
-              <span class="text-gray-700 ml-1">({{ transacoesFiltradas.length }})</span>
-            </span>
-            <span class="font-black text-sm tabular-nums"
-              :class="filtroAtivo==='despesa'?'text-red-400':filtroAtivo==='receita'?'text-green-400':'text-teal-400'">
-              {{ filtroAtivo==='todos'?formatar(balanco):filtroAtivo==='receita'?formatar(totalEntradas):formatar(totalSaidas) }}
-            </span>
-          </div>
-          <div v-if="transacoesFiltradas.length===0" class="bg-[#13161f] rounded-2xl p-12 border border-white/5 text-center">
-            <p class="text-4xl mb-2">📭</p>
-            <p class="text-gray-500 text-sm">Nenhum lançamento ainda.</p>
-            <button @click="modalLancamento=true" class="mt-3 text-teal-400 text-sm font-semibold hover:underline">+ Criar lançamento</button>
-          </div>
-          <div class="bg-[#13161f] rounded-2xl border border-white/5 overflow-hidden">
-            <div v-for="(t,i) in transacoesFiltradas" :key="t.id"
-              :class="i>0?'border-t border-white/5':''"
-              class="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.02] transition-all group">
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center text-base flex-shrink-0"
-                :class="t.tipo==='receita'?'bg-green-500/15':'bg-red-500/15'">
-                {{ emojiCat[t.categoria]||(t.tipo==='receita'?'💚':'🔴') }}
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium truncate">{{ t.descricao }}</p>
-                <p class="text-gray-600 text-xs">{{ t.Account?.banco || t.Account?.nome }} • {{ fmtData(t.data) }}</p>
-              </div>
-              <div class="flex items-center gap-2 flex-shrink-0">
-                <p :class="t.tipo==='receita'?'text-green-400':'text-red-400'" class="text-sm font-black tabular-nums">
-                  {{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}
-                </p>
-                <button @click="abrirEditar(t)"
-                  class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-teal-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-teal-500/10 transition-all text-sm">✏️</button>
-                <button @click="tx.deletar(t.id).then(()=>mostrarToast('🗑️ Removido'))"
-                  class="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 text-gray-700 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-xl hover:bg-red-500/10 transition-all text-sm">✕</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-show="subAbaHistorico==='metricas'" class="space-y-5">
-          <div class="flex bg-[#13161f] border border-white/5 rounded-2xl p-1 gap-1">
-            <button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val"
-              :class="periodoMetricas===p.val?'bg-violet-600 text-white shadow shadow-violet-500/20':'text-gray-500 hover:text-white'"
-              class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all">
-              {{ p.label }}
-            </button>
-          </div>
-          <div class="flex items-center gap-2 px-1">
-            <div class="w-2 h-2 rounded-full bg-violet-500"></div>
-            <p class="text-sm font-bold text-gray-300 capitalize">{{ labelPeriodo }}</p>
-          </div>
-          <div class="grid grid-cols-3 gap-3">
-            <div class="bg-[#13161f] border border-red-500/20 rounded-2xl p-4 text-center">
-              <div class="w-8 h-8 rounded-xl bg-red-500/15 flex items-center justify-center text-base mx-auto mb-2">⬇️</div>
-              <p class="text-xs text-gray-600 mb-1">Gasto</p>
-              <p class="font-black text-red-400 tabular-nums text-sm">{{ formatar(totalGastoPeriodo) }}</p>
-            </div>
-            <div class="bg-[#13161f] border border-green-500/20 rounded-2xl p-4 text-center">
-              <div class="w-8 h-8 rounded-xl bg-green-500/15 flex items-center justify-center text-base mx-auto mb-2">⬆️</div>
-              <p class="text-xs text-gray-600 mb-1">Recebido</p>
-              <p class="font-black text-green-400 tabular-nums text-sm">{{ formatar(totalRecebPeriodo) }}</p>
-            </div>
-            <div class="bg-[#13161f] border border-violet-500/20 rounded-2xl p-4 text-center">
-              <div class="w-8 h-8 rounded-xl bg-violet-500/15 flex items-center justify-center text-base mx-auto mb-2">💹</div>
-              <p class="text-xs text-gray-600 mb-1">Economizado</p>
-              <p class="font-black tabular-nums text-sm" :class="taxaEconomia>0?'text-violet-400':'text-gray-600'">{{ taxaEconomia }}%</p>
-            </div>
-          </div>
-          <div v-if="gastosPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
-            <p class="text-xs font-black text-gray-500 uppercase tracking-widest">⬇️ Gastos por categoria</p>
-            <div class="flex items-center gap-5">
-              <div class="relative flex-shrink-0">
-                <svg viewBox="0 0 120 120" class="w-32 h-32 -rotate-90">
-                  <circle cx="60" cy="60" r="45" fill="none" stroke="#ffffff08" stroke-width="14"/>
-                  <circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none"
-                    :stroke="seg.cor" stroke-width="14" stroke-linecap="butt"
-                    :stroke-dasharray="`${seg.dash - 2} ${CIRCUMFERENCE - seg.dash + 2}`"
-                    :stroke-dashoffset="-(seg.offset)"
-                    style="transition:stroke-dasharray .6s ease,stroke-dashoffset .6s ease"/>
-                </svg>
-                <div class="absolute inset-0 flex flex-col items-center justify-center">
-                  <p class="text-xs text-gray-600">Total</p>
-                  <p class="font-black text-white text-xs tabular-nums leading-tight">{{ formatar(totalGastoPeriodo) }}</p>
-                </div>
-              </div>
-              <div class="flex-1 space-y-2 min-w-0">
-                <div v-for="item in gastosPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
-                  <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{backgroundColor:item.cor}"></div>
-                  <p class="text-xs text-gray-400 truncate flex-1">{{ item.label }}</p>
-                  <p class="text-xs font-black tabular-nums flex-shrink-0" :style="{color:item.cor}">{{ item.pct }}%</p>
-                </div>
-                <p v-if="gastosPorCat.length>4" class="text-xs text-gray-700 pl-4">+{{ gastosPorCat.length-4 }} mais abaixo</p>
-              </div>
-            </div>
-            <div class="space-y-3">
-              <div v-for="item in gastosPorCat" :key="item.cat" class="space-y-1.5">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="text-base">{{ item.emoji }}</span>
-                    <span class="text-sm font-semibold">{{ item.label }}</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs text-gray-500 tabular-nums">{{ formatar(item.valor) }}</span>
-                    <span class="text-sm font-black tabular-nums w-10 text-right" :style="{color:item.cor}">{{ item.pct }}%</span>
-                  </div>
-                </div>
-                <div class="h-2 rounded-full bg-white/5 overflow-hidden">
-                  <div class="h-2 rounded-full transition-all duration-700"
-                    :style="{width:item.pct+'%',backgroundColor:item.cor,boxShadow:`0 0 8px ${item.cor}60`}"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-if="receitasPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
-            <p class="text-xs font-black text-gray-500 uppercase tracking-widest">⬆️ Receitas por categoria</p>
-            <div class="flex items-center gap-5">
-              <div class="relative flex-shrink-0">
-                <svg viewBox="0 0 120 120" class="w-32 h-32 -rotate-90">
-                  <circle cx="60" cy="60" r="45" fill="none" stroke="#ffffff08" stroke-width="14"/>
-                  <circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none"
-                    :stroke="seg.cor" stroke-width="14" stroke-linecap="butt"
-                    :stroke-dasharray="`${seg.dash - 2} ${CIRCUMFERENCE - seg.dash + 2}`"
-                    :stroke-dashoffset="-(seg.offset)"
-                    style="transition:stroke-dasharray .6s ease,stroke-dashoffset .6s ease"/>
-                </svg>
-                <div class="absolute inset-0 flex flex-col items-center justify-center">
-                  <p class="text-xs text-gray-600">Total</p>
-                  <p class="font-black text-white text-xs tabular-nums leading-tight">{{ formatar(totalRecebPeriodo) }}</p>
-                </div>
-              </div>
-              <div class="flex-1 space-y-2 min-w-0">
-                <div v-for="item in receitasPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
-                  <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{backgroundColor:item.cor}"></div>
-                  <p class="text-xs text-gray-400 truncate flex-1">{{ item.label }}</p>
-                  <p class="text-xs font-black tabular-nums flex-shrink-0" :style="{color:item.cor}">{{ item.pct }}%</p>
-                </div>
-              </div>
-            </div>
-            <div class="space-y-3">
-              <div v-for="item in receitasPorCat" :key="item.cat" class="space-y-1.5">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="text-base">{{ item.emoji }}</span>
-                    <span class="text-sm font-semibold">{{ item.label }}</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs text-gray-500 tabular-nums">{{ formatar(item.valor) }}</span>
-                    <span class="text-sm font-black tabular-nums w-10 text-right" :style="{color:item.cor}">{{ item.pct }}%</span>
-                  </div>
-                </div>
-                <div class="h-2 rounded-full bg-white/5 overflow-hidden">
-                  <div class="h-2 rounded-full transition-all duration-700"
-                    :style="{width:item.pct+'%',backgroundColor:item.cor,boxShadow:`0 0 8px ${item.cor}60`}"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-if="txPeriodo.length===0" class="bg-[#13161f] border border-dashed border-white/10 rounded-2xl py-14 text-center">
-            <p class="text-4xl mb-2">📊</p>
-            <p class="text-gray-500 text-sm mb-1">Sem dados para este período</p>
-            <button @click="modalLancamento=true" class="mt-2 text-teal-400 text-sm hover:underline">+ Criar lançamento</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ABA MÉTRICAS (principal) -->
-<div v-show="aba === 'metricas'" class="space-y-5">
-
-  <!-- Seletor de período -->
-  <div class="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-    <button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val"
-      :class="periodoMetricas===p.val?'bg-violet-600 text-white shadow shadow-violet-500/20':'text-gray-500 hover:text-white'"
-      class="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all">
-      {{ p.label }}
+  <nav class="ios-header-nav">
+    <div class="ios-nav-slider" :style="{ transform: `translateX(${navItems.findIndex(i => i.val === aba) * 100}%)` }"></div>
+    <button v-for="item in navItems" :key="item.val" @click.prevent="aba=item.val" :class="{active:aba===item.val}" class="ios-header-tab">
+      {{ item.label }}
     </button>
+  </nav>
+
+  <div class="ios-header-right">
+    <div class="ios-user-badge">
+      <div class="ios-avatar">{{ auth.nome?.charAt(0).toUpperCase() }}</div>
+      <span class="ios-greeting" style="display: none;">Olá, <strong>{{ auth.nome?.split(' ')[0] }}</strong></span>
+    </div>
+    <button @click="modalAlertas=true" class="ios-hdr-btn">🔔</button>
+    <button @click="auth.logout()" class="ios-hdr-btn ios-hdr-btn-danger">✕</button>
+  </div>
+</header>
+
+<main class="ios-main">
+<div v-show="aba==='inicio'" class="ios-content">
+
+  <div class="ios-balance-card">
+    <div class="ios-balance-inner">
+      <div class="ios-balance-top">
+        <div><p class="ios-balance-label">Saldo Total</p><p class="ios-balance-sub">{{ accounts.contas.length }} conta(s)</p></div>
+        <div class="ios-balance-badge">📅 {{ mesAtual }}</div>
+      </div>
+      <h2 class="ios-balance-value" :class="{up:saldoAnimando==='up',down:saldoAnimando==='down'}">{{ formatar(saldoExibido) }}</h2>
+      <Transition name="ios-diff"><div v-if="diffVisivel" class="ios-balance-diff" :class="diffValor>=0?'pos':'neg'">{{ diffValor>=0?'+':'' }}{{ formatar(diffValor) }}</div></Transition>
+      <div class="ios-balance-bar"><div class="ios-balance-bar-fill" :class="pctEntradas>50?'good':'warn'" :style="{width:pctEntradas+'%'}"></div></div>
+      <div class="ios-balance-row"><span>⬆ {{ formatar(totalEntradas) }}</span><span>⬇ {{ formatar(totalSaidas) }}</span></div>
+    </div>
   </div>
 
-  <!-- Cards resumo -->
-  <div class="grid grid-cols-3 gap-3">
-    <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5">
-      <p class="text-[11px] text-gray-500 mb-1">Receitas</p>
-      <p class="text-base font-bold text-emerald-400">{{ formatar(totalRecebPeriodo) }}</p>
+  <div class="ios-quick-grid">
+    <button @click="modalLancamento=true;passoLancamento=1" class="ios-quick-btn"><span class="ios-quick-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><span>Lançar</span></button>
+    <button @click="abrirTransferenciaStep()" class="ios-quick-btn"><span class="ios-quick-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg></span><span>Transferir</span></button>
+    <button @click="modalAlertas=true" class="ios-quick-btn"><span class="ios-quick-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span><span>Alertas</span></button>
+    <button @click="modalConta=true" class="ios-quick-btn"><span class="ios-quick-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg></span><span>Conta</span></button>
+  </div>
+
+  <div class="ios-summary-grid">
+    <div class="ios-widget" @click="aba='historico';filtroAtivo='receita'">
+      <div class="ios-widget-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></div><p class="ios-widget-label">Entradas</p><p class="ios-widget-value wg-green-text">{{ formatar(totalEntradas) }}</p>
     </div>
-    <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5">
-      <p class="text-[11px] text-gray-500 mb-1">Despesas</p>
-      <p class="text-base font-bold text-red-400">{{ formatar(totalGastoPeriodo) }}</p>
+    <div class="ios-widget" @click="aba='historico';filtroAtivo='despesa'">
+      <div class="ios-widget-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10"/><path d="M17 7v10H7"/></svg></div><p class="ios-widget-label">Saídas</p><p class="ios-widget-value wg-red-text">{{ formatar(totalSaidas) }}</p>
     </div>
-    <div class="bg-[#13161f] rounded-2xl p-4 border border-white/5">
-      <p class="text-[11px] text-gray-500 mb-1">Economia</p>
-      <p class="text-base font-bold text-violet-400">{{ taxaEconomia }}%</p>
+    <div class="ios-widget">
+      <div class="ios-widget-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></div><p class="ios-widget-label">Balanço</p><p class="ios-widget-value" :class="balanco>=0?'wg-teal-text':'wg-red-text'">{{ formatar(balanco) }}</p>
     </div>
   </div>
 
-  <!-- Donut Despesas por categoria -->
-  <div v-if="gastosPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
-    <p class="text-sm font-semibold text-white">Despesas por categoria</p>
-    <div class="flex items-center gap-6">
-      <svg width="120" height="120" viewBox="0 0 120 120" class="flex-shrink-0">
-        <circle cx="60" cy="60" r="45" fill="none" stroke="#1e2230" stroke-width="18"/>
-        <circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none"
-          :stroke="seg.cor" stroke-width="18" stroke-linecap="butt"
-          :stroke-dasharray="`${seg.dash} ${CIRCUMFERENCE - seg.dash}`"
-          :stroke-dashoffset="CIRCUMFERENCE - seg.offset"
-          style="transform:rotate(-90deg);transform-origin:60px 60px"/>
-      </svg>
-      <div class="flex-1 space-y-2">
-        <div v-for="item in gastosPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
-          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{background:item.cor}"/>
-          <span class="text-xs text-gray-300 flex-1">{{ item.label }}</span>
-          <span class="text-xs text-gray-400">{{ item.pct }}%</span>
+  <div v-if="accounts.contas.length" class="ios-widget-card">
+    <div class="ios-wc-header"><p>🏦 Minhas Contas</p><button @click="aba='contas'" class="ios-link">Ver todas →</button></div>
+    <div v-for="conta in accounts.contas" :key="conta.id" class="ios-account-row">
+      <div class="ios-acc-icon" :style="{background:conta.cor+'18',color:conta.cor}">{{ conta.banco.charAt(0).toUpperCase() }}</div>
+      <div class="ios-acc-info"><p class="ios-acc-name">{{ conta.banco }}</p><div class="ios-acc-bar"><div :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div></div></div>
+      <p class="ios-acc-val" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
+    </div>
+  </div>
+  <div v-else class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">🏦</p><p>Nenhuma conta ainda</p><button @click="modalConta=true" class="ios-link">+ Adicionar conta</button></div>
+
+  <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual>=b.limite)" :key="'al-'+b.id" class="ios-alert-card ios-alert-danger">
+    <div class="ios-alert-icon">{{ emojiCat[b.categoria]||'⚠️' }}</div>
+    <div class="ios-alert-body"><p class="ios-alert-title">🚨 Limite ultrapassado!</p><p class="ios-alert-sub">{{ labelCat[b.categoria] }}: <strong>{{ formatar(b.gastoAtual) }}</strong> de {{ formatar(b.limite) }}</p>
+      <div class="ios-alert-bar"><div :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}" class="bg-red"></div></div></div>
+  </div>
+  <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual>=b.limite*0.7 && b.gastoAtual<b.limite)" :key="'av-'+b.id" class="ios-alert-card ios-alert-warn">
+    <div class="ios-alert-icon">{{ emojiCat[b.categoria]||'⚠️' }}</div>
+    <div class="ios-alert-body"><p class="ios-alert-title">⚠️ Atenção!</p><p class="ios-alert-sub">{{ labelCat[b.categoria] }}: <strong>{{ formatar(b.gastoAtual) }}</strong> de {{ formatar(b.limite) }} ({{ Math.round((b.gastoAtual/b.limite)*100) }}%)</p>
+      <div class="ios-alert-bar"><div :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}" class="bg-amber"></div></div></div>
+  </div>
+
+  <div v-if="items.itens.filter(i=>i.status==='disponivel').length" class="ios-widget-card">
+    <div class="ios-wc-header"><p>📦 À venda</p><button @click="aba='investimentos'" class="ios-link">Ver tudo →</button></div>
+    <div v-for="item in items.itens.filter(i=>i.status==='disponivel').slice(0,3)" :key="item.id" class="ios-account-row">
+      <span style="font-size:1.2rem">📦</span>
+      <p style="flex:1;font-size:.875rem;font-weight:500">{{ item.nome }}</p>
+      <p class="wg-orange-text" style="font-weight:800;font-size:.875rem">{{ formatar(item.valor) }}</p>
+      <button @click="abrirVenda(item)" class="ios-pill-btn">Vender</button>
+    </div>
+  </div>
+</div>
+
+<div v-show="aba==='contas'" class="ios-content">
+  <div class="ios-section-header"><p class="ios-section-title">🏦 Contas</p>
+    <div style="display:flex;gap:.5rem"><button @click="abrirTransferenciaStep()" class="ios-pill-btn blue">🔄 Transferir</button><button @click="modalConta=true" class="ios-pill-btn green">+ Nova</button></div>
+  </div>
+  <div v-if="accounts.contas.length" class="ios-total-banner"><p>Total consolidado</p><p class="ios-total-val">{{ formatar(accounts.saldoTotal) }}</p></div>
+  <div class="ios-cards-grid">
+    <div v-for="conta in accounts.contas" :key="conta.id" class="ios-conta-card">
+      <div class="ios-conta-top-bar" :style="{backgroundColor:conta.cor}"></div>
+      <div class="ios-conta-header">
+        <div class="ios-acc-icon lg" :style="{background:conta.cor+'18',color:conta.cor}">{{ conta.banco.charAt(0).toUpperCase() }}</div>
+        <div><p style="font-weight:700;font-size:.9rem">{{ conta.banco }}</p><p class="ios-muted">Conta bancária</p></div>
+        <button @click="confirmarDel(conta)" class="ios-del-btn">✕</button>
+      </div>
+      <p class="ios-conta-saldo" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
+      <div class="ios-conta-footer"><span>Participação</span><span>{{ accounts.saldoTotal>0?Math.round((conta.saldo/accounts.saldoTotal)*100):0 }}%</span></div>
+      <div class="ios-acc-bar full"><div :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div></div>
+    </div>
+  </div>
+  <div v-if="!accounts.contas.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">🏦</p><p>Nenhuma conta.</p><button @click="modalConta=true" class="ios-link">Adicionar →</button></div>
+</div>
+
+<div v-show="aba==='historico'" class="ios-content">
+  <div class="ios-segmented"><button @click="subAbaHistorico='lancamentos'" :class="{active:subAbaHistorico==='lancamentos'}">📋 Lançamentos</button><button @click="subAbaHistorico='metricas'" :class="{active:subAbaHistorico==='metricas'}">📊 Métricas</button></div>
+  <div v-show="subAbaHistorico==='lancamentos'">
+    <div class="ios-segmented sm"><button v-for="f in filtros" :key="f.val" @click="filtroAtivo=f.val" :class="{active:filtroAtivo===f.val}">{{ f.label }}</button></div>
+    <div class="ios-list-header"><span>{{ filtroAtivo==='todos'?'Todas':filtroAtivo==='receita'?'Entradas':'Saídas' }} ({{ transacoesFiltradas.length }})</span><span class="ios-list-total" :class="filtroAtivo==='despesa'?'wg-red-text':filtroAtivo==='receita'?'wg-green-text':'wg-teal-text'">{{ filtroAtivo==='todos'?formatar(balanco):filtroAtivo==='receita'?formatar(totalEntradas):formatar(totalSaidas) }}</span></div>
+    <div v-if="!transacoesFiltradas.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">📭</p><p>Nenhum lançamento</p><button @click="modalLancamento=true" class="ios-link">+ Criar</button></div>
+    <div class="ios-widget-card">
+      <div v-for="(t,i) in transacoesFiltradas" :key="t.id" class="ios-tx-row" :class="{bordered:i>0}">
+        <div class="ios-tx-icon" :class="t.tipo==='receita'?'wg-green':'wg-red'">{{ emojiCat[t.categoria]||(t.tipo==='receita'?'💚':'🔴') }}</div>
+        <div class="ios-tx-info"><p class="ios-tx-desc">{{ t.descricao }}</p><p class="ios-muted">{{ t.Account?.banco||t.Account?.nome }} • {{ fmtData(t.data) }}</p></div>
+        <div class="ios-tx-right">
+          <p :class="t.tipo==='receita'?'wg-green-text':'wg-red-text'" style="font-weight:800;font-size:.875rem">{{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}</p>
+          <div class="ios-tx-actions"><button @click="abrirEditar(t)" class="ios-sm-btn">✏️</button><button @click="tx.deletar(t.id).then(()=>mostrarToast('🗑️ Removido'))" class="ios-sm-btn danger">✕</button></div>
         </div>
       </div>
     </div>
-    <div v-for="item in gastosPorCat" :key="item.cat" class="space-y-1.5">
-      <div class="flex justify-between text-xs">
-        <span class="text-gray-300">{{ item.emoji }} {{ item.label }}</span>
-        <span class="text-gray-400">{{ formatar(item.valor) }} · {{ item.pct }}%</span>
+  </div>
+  <div v-show="subAbaHistorico==='metricas'" class="ios-metrics-section">
+    <div class="ios-segmented sm"><button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val" :class="{active:periodoMetricas===p.val}">{{ p.label }}</button></div>
+    <p class="ios-period-label">{{ labelPeriodo }}</p>
+    <div class="ios-summary-grid">
+      <div class="ios-widget"><div class="ios-widget-icon wg-red">⬇️</div><p class="ios-widget-label">Gasto</p><p class="ios-widget-value wg-red-text">{{ formatar(totalGastoPeriodo) }}</p></div>
+      <div class="ios-widget"><div class="ios-widget-icon wg-green">⬆️</div><p class="ios-widget-label">Recebido</p><p class="ios-widget-value wg-green-text">{{ formatar(totalRecebPeriodo) }}</p></div>
+      <div class="ios-widget"><div class="ios-widget-icon wg-purple">💹</div><p class="ios-widget-label">Economia</p><p class="ios-widget-value wg-purple-text">{{ taxaEconomia }}%</p></div>
+    </div>
+    <div v-if="gastosPorCat.length" class="ios-widget-card">
+      <p class="ios-wc-title">⬇️ Gastos por categoria</p>
+      <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="14"/><circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="14" :stroke-dasharray="(seg.dash-2)+' '+(CIRCUMFERENCE-seg.dash+2)" :stroke-dashoffset="-(seg.offset)" style="transition:all .6s ease"/></svg><div class="ios-donut-center"><p class="ios-muted">Total</p><p style="font-weight:800;font-size:.75rem">{{ formatar(totalGastoPeriodo) }}</p></div></div>
+        <div class="ios-donut-legend"><div v-for="item in gastosPorCat.slice(0,5)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct" :style="{color:item.cor}">{{ item.pct }}%</span></div></div>
       </div>
-      <div class="h-1.5 bg-[#1e2230] rounded-full overflow-hidden">
-        <div class="h-full rounded-full transition-all duration-500" :style="{width:item.pct+'%',background:item.cor}"/>
+      <div class="ios-cat-bars"><div v-for="item in gastosPorCat" :key="item.cat" class="ios-cat-bar-item"><div class="ios-cat-bar-header"><span>{{ item.emoji }} {{ item.label }}</span><span class="ios-muted">{{ formatar(item.valor) }} · <strong :style="{color:item.cor}">{{ item.pct }}%</strong></span></div><div class="ios-progress"><div :style="{width:item.pct+'%',background:item.cor}"></div></div></div></div>
+    </div>
+    <div v-if="receitasPorCat.length" class="ios-widget-card">
+      <p class="ios-wc-title">⬆️ Receitas por categoria</p>
+      <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="14"/><circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="14" :stroke-dasharray="(seg.dash-2)+' '+(CIRCUMFERENCE-seg.dash+2)" :stroke-dashoffset="-(seg.offset)" style="transition:all .6s ease"/></svg><div class="ios-donut-center"><p class="ios-muted">Total</p><p style="font-weight:800;font-size:.75rem">{{ formatar(totalRecebPeriodo) }}</p></div></div>
+        <div class="ios-donut-legend"><div v-for="item in receitasPorCat.slice(0,5)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct" :style="{color:item.cor}">{{ item.pct }}%</span></div></div>
       </div>
+    </div>
+    <div v-if="!txPeriodo.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">📊</p><p>Sem dados neste período</p></div>
+  </div>
+</div>
+
+<div v-show="aba==='metricas'" class="ios-content">
+  <div class="ios-segmented sm"><button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val" :class="{active:periodoMetricas===p.val}">{{ p.label }}</button></div>
+  <div class="ios-summary-grid">
+    <div class="ios-widget"><p class="ios-widget-label">Receitas</p><p class="ios-widget-value wg-green-text">{{ formatar(totalRecebPeriodo) }}</p></div>
+    <div class="ios-widget"><p class="ios-widget-label">Despesas</p><p class="ios-widget-value wg-red-text">{{ formatar(totalGastoPeriodo) }}</p></div>
+    <div class="ios-widget"><p class="ios-widget-label">Economia</p><p class="ios-widget-value wg-purple-text">{{ taxaEconomia }}%</p></div>
+  </div>
+  <div v-if="gastosPorCat.length" class="ios-widget-card">
+    <p class="ios-wc-title">Despesas por categoria</p>
+    <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" width="120" height="120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="18" :stroke-dasharray="seg.dash+' '+(CIRCUMFERENCE-seg.dash)" :stroke-dashoffset="CIRCUMFERENCE-seg.offset" style="transform:rotate(-90deg);transform-origin:60px 60px"/></svg></div>
+    <div class="ios-donut-legend"><div v-for="item in gastosPorCat.slice(0,4)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct">{{ item.pct }}%</span></div></div></div>
+    <div class="ios-cat-bars"><div v-for="item in gastosPorCat" :key="item.cat" class="ios-cat-bar-item"><div class="ios-cat-bar-header"><span>{{ item.emoji }} {{ item.label }}</span><span class="ios-muted">{{ formatar(item.valor) }} · {{ item.pct }}%</span></div><div class="ios-progress"><div :style="{width:item.pct+'%',background:item.cor}"></div></div></div></div>
+  </div>
+  <div v-if="receitasPorCat.length" class="ios-widget-card">
+    <p class="ios-wc-title">Receitas por categoria</p>
+    <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" width="120" height="120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="18" :stroke-dasharray="seg.dash+' '+(CIRCUMFERENCE-seg.dash)" :stroke-dashoffset="CIRCUMFERENCE-seg.offset" style="transform:rotate(-90deg);transform-origin:60px 60px"/></svg></div>
+    <div class="ios-donut-legend"><div v-for="item in receitasPorCat.slice(0,4)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct">{{ item.pct }}%</span></div></div></div>
+  </div>
+  <div v-if="!txPeriodo.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">📊</p><p>Nenhuma transação neste período</p></div>
+</div>
+
+<div v-show="aba==='investimentos'" class="ios-content">
+  <div class="ios-section-header">
+    <p class="ios-section-title">📦 Itens</p>
+    <div style="display:flex;gap:.5rem">
+      <button @click="modalItem=true;subAbaInv='compra'" class="ios-pill-btn blue">🛒 Comprar</button>
+      <button @click="modalItem=true;subAbaInv='venda'" class="ios-pill-btn orange">+ Novo Item</button>
     </div>
   </div>
 
-  <!-- Donut Receitas por categoria -->
-  <div v-if="receitasPorCat.length > 0" class="bg-[#13161f] border border-white/5 rounded-2xl p-5 space-y-5">
-    <p class="text-sm font-semibold text-white">Receitas por categoria</p>
-    <div class="flex items-center gap-6">
-      <svg width="120" height="120" viewBox="0 0 120 120" class="flex-shrink-0">
-        <circle cx="60" cy="60" r="45" fill="none" stroke="#1e2230" stroke-width="18"/>
-        <circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none"
-          :stroke="seg.cor" stroke-width="18" stroke-linecap="butt"
-          :stroke-dasharray="`${seg.dash} ${CIRCUMFERENCE - seg.dash}`"
-          :stroke-dashoffset="CIRCUMFERENCE - seg.offset"
-          style="transform:rotate(-90deg);transform-origin:60px 60px"/>
-      </svg>
-      <div class="flex-1 space-y-2">
-        <div v-for="item in receitasPorCat.slice(0,4)" :key="item.cat" class="flex items-center gap-2">
-          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="{background:item.cor}"/>
-          <span class="text-xs text-gray-300 flex-1">{{ item.label }}</span>
-          <span class="text-xs text-gray-400">{{ item.pct }}%</span>
+  <div class="ios-segmented">
+    <button @click="subAbaInv='venda'" :class="{active:subAbaInv==='venda'}">📦 À Venda</button>
+    <button @click="subAbaInv='compra'" :class="{active:subAbaInv==='compra'}">🛒 Comprados</button>
+  </div>
+
+  <div v-show="subAbaInv==='venda'">
+    <div v-if="!itensVenda.length" class="ios-empty-card">
+      <p style="font-size:2rem;margin-bottom:.5rem">📦</p>
+      <p>Nenhum item à venda</p>
+    </div>
+    <div v-else class="ios-widget-card">
+      <div v-for="(item, i) in itensVenda" :key="item.id" class="ios-tx-row" :class="{bordered:i>0}">
+        <div class="ios-tx-icon wg-orange">📦</div>
+        <div class="ios-tx-info">
+          <p class="ios-tx-desc">{{ item.nome }}</p>
+          <p class="ios-muted">{{ item.descricao || 'Sem descrição' }}</p>
+        </div>
+        <div class="ios-tx-right">
+          <p class="wg-orange-text" style="font-weight:800;font-size:.875rem">{{ formatar(item.valor) }}</p>
+          <div class="ios-tx-actions" v-if="item.status==='disponivel'">
+            <button @click="abrirVenda(item)" class="ios-pill-btn">Vender</button>
+          </div>
+          <p v-else class="ios-muted" style="font-size: 0.75rem;">Vendido</p>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Sem dados -->
-  <div v-if="txPeriodo.length===0" class="bg-[#13161f] border border-dashed border-white/10 rounded-2xl py-14 text-center">
-    <p class="text-4xl mb-3">📊</p>
-    <p class="text-gray-500 text-sm">Nenhuma transação neste período</p>
+  <div v-show="subAbaInv==='compra'">
+    <div v-if="!itensCompra.length" class="ios-empty-card">
+      <p style="font-size:2rem;margin-bottom:.5rem">🛒</p>
+      <p>Nenhuma compra registrada</p>
+    </div>
+    <div v-else class="ios-widget-card">
+      <div v-for="(item, i) in itensCompra" :key="item.id" class="ios-tx-row" :class="{bordered:i>0}">
+        <div class="ios-tx-icon wg-blue">🛒</div>
+        <div class="ios-tx-info">
+          <p class="ios-tx-desc">{{ item.nome }}</p>
+          <p class="ios-muted">{{ item.descricao || 'Sem descrição' }}</p>
+        </div>
+        <div class="ios-tx-right">
+          <p class="wg-blue-text" style="font-weight:800;font-size:.875rem">{{ formatar(item.valor) }}</p>
+        </div>
+      </div>
+    </div>
   </div>
+</div>
+</main>
+
+<nav class="ios-bottomnav">
+  <div class="ios-bottomnav-inner">
+    <button @click="aba='inicio'" :class="{active:aba==='inicio'}" class="ios-tab-btn"><span class="ios-tab-icon">🏠</span><span class="ios-tab-label">Início</span></button>
+    <button @click="aba='contas'" :class="{active:aba==='contas'}" class="ios-tab-btn"><span class="ios-tab-icon">🏦</span><span class="ios-tab-label">Contas</span></button>
+    <button @click="modalLancamento=true;passoLancamento=1" class="ios-fab"><div class="ios-fab-inner">⚡</div><span class="ios-tab-label active">Lançar</span></button>
+    <button @click="aba='historico'" :class="{active:aba==='historico'}" class="ios-tab-btn"><span class="ios-tab-icon">📋</span><span class="ios-tab-label">Histórico</span></button>
+    <button @click="aba='metricas'" :class="{active:aba==='metricas'}" class="ios-tab-btn"><span class="ios-tab-icon">📊</span><span class="ios-tab-label">Métricas</span></button>
+  </div>
+</nav>
+
+<!-- MODAL LANÇAMENTO -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalLancamento" class="ios-modal-bg" @click.self="fecharLancamentoStep">
+<div class="ios-modal-card">
+  <div class="ios-modal-header">
+    <button v-if="passoLancamento>1" @click="passoLancamento--" class="ios-back">‹</button>
+    <div><h3>⚡ Lançamento Rápido</h3><p class="ios-muted">Passo {{ passoLancamento }} de {{ accounts.contas.length>1?4:3 }}</p></div>
+    <button @click="fecharLancamentoStep" class="ios-close">✕</button>
+  </div>
+  <div class="ios-modal-progress"><div :class="formTx.tipo==='receita'?'bg-green':'bg-red'" :style="{width:(passoLancamento/(accounts.contas.length>1?4:3)*100)+'%'}"></div></div>
+  <div class="ios-modal-body">
+    <Transition name="ios-step" mode="out-in">
+    <div v-if="passoLancamento===1" key="p1" class="ios-step">
+      <p class="ios-step-title">O que deseja registrar?</p>
+      <button @click="selecionarTipoLancamento('receita')" class="ios-option-btn green"><div class="ios-option-icon">⬆️</div><div><p class="ios-option-title">Entrada</p><p class="ios-muted">Salário, freelance, presente...</p></div><span class="ios-chevron">›</span></button>
+      <button @click="selecionarTipoLancamento('despesa')" class="ios-option-btn red"><div class="ios-option-icon">⬇️</div><div><p class="ios-option-title">Saída</p><p class="ios-muted">Mercado, contas, lazer...</p></div><span class="ios-chevron">›</span></button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in">
+    <div v-if="passoLancamento===2" key="p2" class="ios-step">
+      <p class="ios-step-title">{{ formTx.tipo==='receita'?'Categoria da entrada':'Categoria da saída' }}</p>
+      <div class="ios-cat-grid"><button v-for="cat in categoriasAtuais" :key="cat.id" @click="selecionarCategoriaStep(cat.id)" :class="{active:formTx.categoria===cat.id}" class="ios-cat-btn"><span class="ios-cat-emoji">{{ cat.emoji }}</span><span>{{ cat.label }}</span></button></div>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in">
+    <div v-if="passoLancamento===3" key="p3" class="ios-step">
+      <div class="ios-context-bar"><span>{{ emojiCat[formTx.categoria] }}</span><div><p class="ios-muted">{{ labelCat[formTx.categoria] }}</p><p :class="formTx.tipo==='receita'?'wg-green-text':'wg-red-text'" style="font-size:.7rem">{{ formTx.tipo==='receita'?'⬆️ Entrada':'⬇️ Saída' }}</p></div></div>
+      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValor" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
+      <div class="ios-chips"><button v-for="v in valoresRapidos.slice(4)" :key="v.val" @click="setValorRapido(v.val)" class="ios-chip">{{ v.label }}</button></div>
+      <input v-model="formTx.descricao" type="text" placeholder="Descrição (opcional)" class="ios-input"/>
+      <button @click="confirmarValorLancamento" :class="formTx.tipo==='receita'?'bg-green':'bg-red'" class="ios-btn-full">{{ accounts.contas.length>1?'Próximo → Conta':'Confirmar ✓' }}</button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in">
+    <div v-if="passoLancamento===4" key="p4" class="ios-step">
+      <p class="ios-step-title">Qual conta?</p>
+      <button v-for="c in accounts.contas" :key="c.id" @click="formTx.accountId=c.id;criarTransacaoStep()" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0).toUpperCase() }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><span class="ios-chevron">›</span></button>
+    </div></Transition>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL TRANSFERÊNCIA -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalTransferencia" class="ios-modal-bg" @click.self="fecharTransferenciaStep">
+<div class="ios-modal-card">
+  <div class="ios-modal-header">
+    <button v-if="passoTransf>1" @click="passoTransf--;buscaUsuario='';usuariosEncontrados=[]" class="ios-back">‹</button>
+    <div><h3>🔄 Transferência</h3><p class="ios-muted">Passo {{ passoTransf }} de {{ formTransf.tipo==='propria'?4:5 }}</p></div>
+    <button @click="fecharTransferenciaStep" class="ios-close">✕</button>
+  </div>
+  <div class="ios-modal-progress"><div class="bg-blue" :style="{width:(passoTransf/(formTransf.tipo==='propria'?4:5)*100)+'%'}"></div></div>
+  <div class="ios-modal-body">
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===1" key="t1" class="ios-step">
+      <p class="ios-step-title">Para onde?</p>
+      <button @click="selecionarTipoTransf('propria')" :disabled="accounts.contas.length<2" class="ios-option-btn teal"><div class="ios-option-icon">🔄</div><div><p class="ios-option-title">Minha conta</p><p class="ios-muted">Entre suas contas</p></div><span class="ios-chevron">›</span></button>
+      <button @click="selecionarTipoTransf('externo')" class="ios-option-btn blue"><div class="ios-option-icon">👤</div><div><p class="ios-option-title">Outro usuário</p><p class="ios-muted">Enviar para outra pessoa</p></div><span class="ios-chevron">›</span></button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===2&&formTransf.tipo==='propria'" key="t2p" class="ios-step">
+      <p class="ios-step-title">Conta destino</p>
+      <button v-for="c in accounts.contas" :key="c.id" @click="selecionarContaDestinoStep(c.id)" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><span class="ios-chevron">›</span></button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===2&&formTransf.tipo==='externo'" key="t2e" class="ios-step">
+      <p class="ios-step-title">Destinatário</p>
+      <div class="ios-search-wrap"><span>🔍</span><input v-model="buscaUsuario" @input="debounceUsuarios" placeholder="Buscar nome ou e-mail..." class="ios-input"/><div v-if="buscandoUsuarios" class="ios-spinner sm"></div></div>
+      <div class="ios-user-list">
+        <button v-for="u in usuariosDestino" :key="u.id" @click="selecionarUsuarioStep(u)" class="ios-option-btn" :class="{selected:formTransf.usuarioDestinoId===u.id}"><div class="ios-user-avatar">{{ u.nome.charAt(0).toUpperCase() }}</div><div><p class="ios-option-title">{{ u.nome }}</p><p class="ios-muted">{{ u.email }}</p></div><span v-if="formTransf.usuarioDestinoId===u.id" class="wg-blue-text">✓</span><span v-else class="ios-chevron">›</span></button>
+        <p v-if="buscaUsuario.length>=2&&!buscandoUsuarios&&!usuariosDestino.length" class="ios-empty-small">Nenhum usuário encontrado</p>
+      </div>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===3&&formTransf.tipo==='propria'" key="t3p" class="ios-step">
+      <p class="ios-step-title">Valor</p>
+      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValorTransf" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
+      <div class="ios-chips"><button v-for="v in valoresRapidosTransf" :key="v.val" @click="setValorRapidoTransf(v.val)" class="ios-chip">{{ v.label }}</button></div>
+      <button @click="confirmarValorTransf" class="ios-btn-full bg-blue">Próximo →</button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===3&&formTransf.tipo==='externo'" key="t3e" class="ios-step">
+      <p class="ios-step-title">Conta do destinatário</p>
+      <button v-for="c in contasUsuarioDestino" :key="c.id" @click="selecionarContaExternaStep(c.id)" class="ios-option-btn" :class="{selected:formTransf.contaExternaId===c.id}"><div class="ios-acc-icon" style="background:rgba(59,130,246,.12);color:#3b82f6">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ c.nome }}</p></div><span class="ios-chevron">›</span></button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===4&&formTransf.tipo==='externo'" key="t4e" class="ios-step">
+      <p class="ios-step-title">Valor</p>
+      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValorTransf" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
+      <input v-model="formTransf.descricao" type="text" placeholder="Descrição (opcional)" class="ios-input"/>
+      <button @click="confirmarValorTransf" class="ios-btn-full bg-blue">Próximo →</button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="(passoTransf===4&&formTransf.tipo==='propria')||(passoTransf===5&&formTransf.tipo==='externo')" key="torigem" class="ios-step">
+      <p class="ios-step-title">De qual conta?</p>
+      <button v-for="c in contasOrigemTransf" :key="c.id" @click="formTransf.contaOrigemId=c.id;realizarTransferenciaStep()" :disabled="loadingTransferencia" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><div v-if="loadingTransferencia&&formTransf.contaOrigemId===c.id" class="ios-spinner sm"></div><span v-else class="ios-chevron">›</span></button>
+    </div></Transition>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL CONTA -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalConta" class="ios-modal-bg" @click.self="modalConta=false">
+<div class="ios-modal-card sm">
+  <div class="ios-modal-header"><div><h3>🏦 Nova Conta</h3></div><button @click="modalConta=false" class="ios-close">✕</button></div>
+  <div class="ios-modal-body">
+    <label class="ios-label">Banco</label>
+    <div class="ios-bank-grid"><button v-for="b in bancosRapidos" :key="b" @click="formConta.banco=b" :class="{active:formConta.banco===b}" class="ios-chip">{{ b }}</button></div>
+    <input v-model="formConta.banco" placeholder="Ou digite..." class="ios-input"/>
+    <label class="ios-label">Saldo atual</label>
+    <input ref="inputSaldo" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/>
+    <label class="ios-label">Cor</label>
+    <div class="ios-color-row"><button v-for="cor in cores" :key="cor" @click="formConta.cor=cor" :style="{backgroundColor:cor}" :class="{active:formConta.cor===cor}" class="ios-color-dot"/></div>
+    <div class="ios-btn-row"><button @click="modalConta=false" class="ios-btn-secondary">Cancelar</button><button @click="criarConta" :disabled="loadingConta" class="ios-btn-full bg-teal">{{ loadingConta?'Salvando...':'Salvar' }}</button></div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL ITEM -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalItem" class="ios-modal-bg" @click.self="modalItem=false">
+<div class="ios-modal-card sm">
+  <div class="ios-modal-header"><div><h3>{{ subAbaInv==='venda'?'📦 Item à Venda':'🛒 Compra' }}</h3></div><button @click="modalItem=false" class="ios-close">✕</button></div>
+  <div class="ios-modal-body">
+    <label class="ios-label">Nome</label><input v-model="formItem.nome" :placeholder="subAbaInv==='venda'?'Ex: Notebook...':'Ex: Teclado...'" class="ios-input"/>
+    <label class="ios-label">Descrição</label><input v-model="formItem.descricao" placeholder="Condição, detalhes..." class="ios-input"/>
+    <label class="ios-label">{{ subAbaInv==='venda'?'Preço':'Valor pago' }}</label><input ref="inputValorItem" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/>
+    <div v-if="subAbaInv==='compra'"><label class="ios-label">Descontar de</label><div class="ios-chips"><button v-for="c in accounts.contas" :key="c.id" @click="formItem.accountId=c.id" :class="{active:formItem.accountId===c.id}" class="ios-chip">{{ c.banco }}</button></div></div>
+    <div class="ios-btn-row"><button @click="modalItem=false" class="ios-btn-secondary">Cancelar</button><button @click="criarItem" :class="subAbaInv==='venda'?'bg-orange':'bg-blue'" class="ios-btn-full">Salvar</button></div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL VENDER ITEM -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="itemParaVenda" class="ios-modal-bg" @click.self="itemParaVenda=null">
+<div class="ios-modal-card sm">
+  <div class="ios-modal-header"><div><h3>💸 Vender Item</h3></div><button @click="itemParaVenda=null" class="ios-close">✕</button></div>
+  <div class="ios-modal-body">
+    <div style="text-align: center; margin-bottom: 1rem;">
+      <p style="font-size: 2rem;">📦</p>
+      <p style="font-weight: bold; font-size: 1.1rem; margin-top: .5rem;">{{ itemParaVenda.nome }}</p>
+    </div>
+    <label class="ios-label">Valor de venda</label>
+    <input ref="inputValorVenda" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/>
+    <label class="ios-label">Receber na conta</label>
+    <div class="ios-chips wrap">
+      <button v-for="c in accounts.contas" :key="c.id" @click="formVenda.accountId=c.id" :class="{active:formVenda.accountId===c.id}" class="ios-chip">{{ c.banco }}</button>
+    </div>
+    <div class="ios-btn-row">
+      <button @click="itemParaVenda=null" class="ios-btn-secondary">Cancelar</button>
+      <button @click="confirmarVenda" class="ios-btn-full bg-green">Vender</button>
+    </div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL ALERTAS -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalAlertas" class="ios-modal-bg" @click.self="modalAlertas=false">
+<div class="ios-modal-card">
+  <div class="ios-modal-header"><div><h3>🔔 Alertas de Orçamento</h3></div><button @click="modalAlertas=false" class="ios-close">✕</button></div>
+  <div class="ios-modal-body">
+    <label class="ios-label">Categoria</label>
+    <div class="ios-cat-grid compact"><button v-for="cat in categoriasSaida" :key="cat.id" @click="formAlerta.categoria=cat.id" :class="{active:formAlerta.categoria===cat.id}" class="ios-cat-btn"><span class="ios-cat-emoji">{{ cat.emoji }}</span><span>{{ cat.label }}</span></button></div>
+    <div class="ios-inline-form"><input ref="inputValorAlerta" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/><button @click="salvarAlerta" :disabled="loadingAlerta" class="ios-btn-full bg-orange" style="flex-shrink:0;width:auto;padding:0 1.5rem">{{ budgets.budgets.find(b=>b.categoria===formAlerta.categoria)?'Atualizar':'Criar' }}</button></div>
+    <hr class="ios-divider"/>
+    <label class="ios-label">Configurados ({{ budgets.budgets.length }})</label>
+    <div v-for="b in budgets.budgets" :key="b.id" class="ios-alert-row">
+      <div class="ios-alert-row-icon" :class="b.gastoAtual>=b.limite?'wg-red':b.gastoAtual>=b.limite*0.7?'wg-orange':'wg-teal'">{{ emojiCat[b.categoria]||'📦' }}</div>
+      <div class="ios-alert-row-body"><div class="ios-alert-row-top"><span>{{ labelCat[b.categoria] }}</span><span :class="b.gastoAtual>=b.limite?'wg-red-text':'wg-teal-text'" style="font-weight:800;font-size:.75rem">{{ formatar(b.gastoAtual) }} / {{ formatar(b.limite) }}</span></div><div class="ios-progress sm"><div :class="b.gastoAtual>=b.limite?'bg-red':b.gastoAtual>=b.limite*0.7?'bg-amber':'bg-teal'" :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}"></div></div></div>
+      <button @click="toggleAlerta(b)" class="ios-sm-btn">{{ b.ativo?'🔔':'🔕' }}</button>
+      <button @click="budgets.deletar(b.id).then(()=>mostrarToast('🗑️ Removido'))" class="ios-sm-btn danger">✕</button>
+    </div>
+    <button @click="modalAlertas=false" class="ios-btn-secondary" style="width:100%;margin-top:1rem">Fechar</button>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL EDITAR -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalEditar" class="ios-modal-bg" @click.self="modalEditar=false">
+<div class="ios-modal-card">
+  <div class="ios-modal-header"><div><h3>✏️ Editar Transação</h3></div><button @click="modalEditar=false" class="ios-close">✕</button></div>
+  <div class="ios-modal-body">
+    <div class="ios-segmented sm"><button @click="formEditar.tipo='receita';formEditar.categoria='salario'" :class="{active:formEditar.tipo==='receita'}">⬆️ Entrada</button><button @click="formEditar.tipo='despesa';formEditar.categoria='mercado'" :class="{active:formEditar.tipo==='despesa'}">⬇️ Saída</button></div>
+    <label class="ios-label">Categoria</label>
+    <div class="ios-cat-grid compact"><button v-for="cat in (formEditar.tipo==='receita'?categoriasEntrada:categoriasSaida)" :key="cat.id" @click="formEditar.categoria=cat.id" :class="{active:formEditar.categoria===cat.id}" class="ios-cat-btn"><span class="ios-cat-emoji">{{ cat.emoji }}</span><span>{{ cat.label }}</span></button></div>
+    <label class="ios-label">Conta</label>
+    <div class="ios-chips wrap"><button v-for="c in accounts.contas" :key="c.id" @click="formEditar.accountId=c.id" :class="{active:formEditar.accountId===c.id}" class="ios-chip">{{ c.banco }}</button></div>
+    <label class="ios-label">Valor</label><input ref="inputValorEditar" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/>
+    <label class="ios-label">Descrição</label><input v-model="formEditar.descricao" placeholder="Descrição..." class="ios-input"/>
+    <label class="ios-label">Data</label><input v-model="formEditar.data" type="date" class="ios-input"/>
+    <div class="ios-btn-row"><button @click="modalEditar=false" class="ios-btn-secondary">Cancelar</button><button @click="salvarEdicao" :disabled="loadingEditar" :class="formEditar.tipo==='receita'?'bg-green':'bg-teal'" class="ios-btn-full">{{ loadingEditar?'Salvando...':'✅ Salvar' }}</button></div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL CONFIRMAR DELETE -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="contaParaDel" class="ios-modal-bg" @click.self="contaParaDel=null">
+<div class="ios-modal-card sm" style="text-align:center">
+  <div class="ios-modal-body">
+    <p style="font-size:2.5rem;margin-bottom:.5rem">🗑️</p>
+    <h3 style="margin-bottom:.25rem">Excluir {{ contaParaDel.banco }}?</h3>
+    <p class="ios-muted">Esta ação não pode ser desfeita.</p>
+    <div class="ios-btn-row" style="margin-top:1.5rem"><button @click="contaParaDel=null" class="ios-btn-secondary">Cancelar</button><button @click="deletarConta" class="ios-btn-full bg-red">Excluir</button></div>
+  </div>
+</div></div>
+</Transition></Teleport>
 
 </div>
 
-      <div v-show="aba === 'investimentos'"></div>
+<!-- FINORA FLOATING BUTTON -->
+<button class="android-17-gemini-btn" @click="showFinoraChat = true">
+  <span class="gemini-icon">✨</span> Fale com a Finora
+</button>
 
-    </main>
-
-    <!-- ── BOTTOM NAV (mobile) ── -->
-    <nav class="fixed bottom-0 left-0 right-0 lg:hidden bg-[#0e1017]/96 backdrop-blur-xl border-t border-white/5 z-40">
-      <div class="flex items-center justify-around px-1 py-2 max-w-sm mx-auto" style="padding-bottom: max(8px, env(safe-area-inset-bottom))">
-        <button v-for="item in navItems.slice(0,2)" :key="item.val" @click="aba = item.val"
-          :class="aba === item.val ? 'text-teal-400' : 'text-gray-600 hover:text-gray-400'"
-          class="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[52px]">
-          <span class="text-xl leading-none">{{ item.icon }}</span>
-          <span class="text-[10px] font-semibold">{{ item.label }}</span>
-        </button>
-
-        <!-- FAB central -->
-        <button @click="modalLancamento = true; passoLancamento = 1"
-          class="flex flex-col items-center gap-0.5 -mt-5 px-1">
-          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center shadow-xl shadow-teal-500/40 active:scale-95 transition-transform">
-            <span class="text-2xl leading-none">⚡</span>
-          </div>
-          <span class="text-[10px] font-semibold text-teal-400 mt-0.5">Lançar</span>
-        </button>
-
-        <button v-for="item in navItems.slice(2,4)" :key="item.val" @click="aba = item.val"
-          :class="aba === item.val ? 'text-teal-400' : 'text-gray-600 hover:text-gray-400'"
-          class="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all min-w-[52px]">
-          <span class="text-xl leading-none">{{ item.icon }}</span>
-          <span class="text-[10px] font-semibold">{{ item.label }}</span>
-        </button>
+<!-- FINORA CHAT MODAL -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="showFinoraChat" class="ios-modal-bg finora-chat-bg" @click.self="showFinoraChat = false">
+  <div class="finora-chat-wrapper">
+    <div class="finora-chat-rainbow-border"></div>
+    <div class="finora-chat-card">
+      <div class="ios-modal-header">
+        <div style="display:flex;align-items:center;gap:.5rem"><span class="gemini-icon" style="font-size:1.2rem">✨</span> <h3>Finora IA</h3></div>
+        <button @click="showFinoraChat=false" class="ios-close" style="margin-left:auto">✕</button>
       </div>
-    </nav>
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- MODAL LANÇAMENTO — STEP BY STEP                            -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <Transition name="modal-slide">
-        <div v-if="modalLancamento"
-          style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.82);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem;"
-          @click.self="fecharLancamentoStep">
-
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full sm:max-w-md shadow-2xl overflow-hidden flex flex-col" style="max-height:90dvh;">
-
-
-            <!-- Header -->
-            <div class="flex items-center justify-between px-5 pt-4 pb-3 flex-shrink-0">
-              <div class="flex items-center gap-2.5">
-                <button v-if="passoLancamento > 1" @click="passoLancamento--"
-                  class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white text-base font-bold transition-all flex-shrink-0">
-                  ‹
-                </button>
-                <div>
-                  <h3 class="font-black text-sm leading-tight">⚡ Lançamento Rápido</h3>
-                  <p class="text-[10px] text-gray-500 leading-tight mt-0.5">
-                    {{ passoLancamento === 1 ? 'Tipo' : passoLancamento === 2 ? 'Categoria' : passoLancamento === 3 ? 'Valor' : 'Conta' }}
-                    · passo {{ passoLancamento }} de {{ accounts.contas.length > 1 ? 4 : 3 }}
-                  </p>
-                </div>
-              </div>
-              <button @click="fecharLancamentoStep"
-                class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white transition-all flex-shrink-0">
-                <span class="text-xs font-black">✕</span>
-              </button>
+      <div class="finora-chat-body">
+        <div v-for="(msg, i) in finoraMessages" :key="i" :class="['finora-msg', msg.role]">
+          <div class="msg-bubble">
+            <div v-if="msg.loading" class="finora-typing">
+              <span></span><span></span><span></span>
             </div>
-
-            <!-- Progress -->
-            <div class="h-[2px] bg-white/5 flex-shrink-0">
-              <div class="h-full transition-all duration-500 rounded-full"
-                :class="formTx.tipo === 'receita' ? 'bg-emerald-500' : 'bg-red-500'"
-                :style="{width: (passoLancamento / (accounts.contas.length > 1 ? 4 : 3) * 100)+'%'}"></div>
-            </div>
-
-            <div class="overflow-y-auto max-h-[75dvh]">
-
-              <!-- PASSO 1: TIPO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoLancamento === 1" key="p1" class="p-5 space-y-3">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest pb-1">O que deseja registrar?</p>
-                <button @click="selecionarTipoLancamento('receita')"
-                  class="w-full flex items-center gap-4 p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/6 hover:bg-emerald-500/12 active:scale-[0.98] transition-all">
-                  <div class="w-14 h-14 rounded-2xl bg-emerald-500/12 flex items-center justify-center text-3xl flex-shrink-0">⬆️</div>
-                  <div class="text-left">
-                    <p class="font-black text-emerald-400 text-base">Entrada</p>
-                    <p class="text-xs text-gray-500 mt-0.5">Salário, freelance, presente...</p>
-                  </div>
-                  <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
-                </button>
-                <button @click="selecionarTipoLancamento('despesa')"
-                  class="w-full flex items-center gap-4 p-4 rounded-2xl border border-red-500/20 bg-red-500/6 hover:bg-red-500/12 active:scale-[0.98] transition-all">
-                  <div class="w-14 h-14 rounded-2xl bg-red-500/12 flex items-center justify-center text-3xl flex-shrink-0">⬇️</div>
-                  <div class="text-left">
-                    <p class="font-black text-red-400 text-base">Saída</p>
-                    <p class="text-xs text-gray-500 mt-0.5">Mercado, contas, lazer...</p>
-                  </div>
-                  <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
-                </button>
-              </div>
-              </Transition>
-
-              <!-- PASSO 2: CATEGORIA -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoLancamento === 2" key="p2" class="p-5">
-                <div class="flex items-center gap-2 mb-4">
-                  <span class="text-xl">{{ formTx.tipo === 'receita' ? '⬆️' : '⬇️' }}</span>
-                  <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">
-                    {{ formTx.tipo === 'receita' ? 'Categoria da entrada' : 'Categoria da saída' }}
-                  </p>
-                </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <button v-for="cat in categoriasAtuais" :key="cat.id"
-                    @click="selecionarCategoriaStep(cat.id)"
-                    :class="formTx.categoria === cat.id
-                      ? (formTx.tipo==='receita'
-                          ? 'border-emerald-500/60 bg-emerald-500/15 text-white'
-                          : 'border-red-500/60 bg-red-500/15 text-white')
-                      : 'border-white/8 bg-white/3 text-gray-400 hover:border-white/15 hover:bg-white/6'"
-                    class="flex flex-col items-center gap-1.5 p-3 rounded-2xl border transition-all active:scale-[0.94]">
-                    <span class="text-2xl leading-none">{{ cat.emoji }}</span>
-                    <span class="text-[11px] font-semibold text-center leading-tight">{{ cat.label }}</span>
-                  </button>
-                </div>
-              </div>
-              </Transition>
-
-              <!-- PASSO 3: VALOR -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoLancamento === 3" key="p3" class="p-5 space-y-4">
-                <div class="flex items-center gap-3 bg-white/3 rounded-2xl px-4 py-3">
-                  <span class="text-2xl leading-none">{{ emojiCat[formTx.categoria] }}</span>
-                  <div>
-                    <p class="text-xs text-gray-500 font-semibold uppercase tracking-wider">{{ labelCat[formTx.categoria] }}</p>
-                    <p class="text-[10px]" :class="formTx.tipo==='receita'?'text-emerald-400':'text-red-400'">
-                      {{ formTx.tipo === 'receita' ? '⬆️ Entrada' : '⬇️ Saída' }}
-                    </p>
-                  </div>
-                </div>
-                <div class="relative">
-                  <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">R$</span>
-                  <input ref="inputValor" @input="e => e.target.value = mascaraMoeda(e.target.value)"
-                    inputmode="decimal" placeholder="0,00"
-                    class="w-full bg-white/5 border border-white/10 pl-10 pr-4 py-4 rounded-2xl outline-none text-2xl font-black text-center placeholder:text-gray-700 transition-all"
-                    :class="formTx.tipo==='receita' ? 'focus:border-emerald-500' : 'focus:border-red-500'" />
-                </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <button v-for="v in valoresRapidos.slice(4)" :key="v.val" @click="setValorRapido(v.val)"
-                    class="py-2 rounded-xl bg-white/5 border border-white/8 hover:bg-white/10 text-xs font-bold transition-all active:scale-[0.95]">
-                    {{ v.label }}
-                  </button>
-                </div>
-                <input v-model="formTx.descricao" type="text" placeholder="Descrição (opcional)"
-                  class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-white/20 transition-all text-sm placeholder:text-gray-700" />
-                <button @click="confirmarValorLancamento"
-                  :class="formTx.tipo==='receita'
-                    ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25'
-                    : 'bg-red-500 hover:bg-red-600 shadow-red-500/25'"
-                  class="w-full py-4 rounded-2xl font-black text-sm text-white shadow-lg transition-all active:scale-[0.98]">
-                  {{ accounts.contas.length > 1 ? 'Próximo → Escolher conta' : 'Confirmar Lançamento ✓' }}
-                </button>
-              </div>
-              </Transition>
-
-              <!-- PASSO 4: CONTA -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoLancamento === 4" key="p4" class="p-5 space-y-3">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-3">Qual conta foi usada?</p>
-                <button v-for="c in accounts.contas" :key="c.id"
-                  @click="formTx.accountId = c.id; criarTransacaoStep()"
-                  class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-white/8 bg-white/3 hover:border-white/20 hover:bg-white/6 transition-all active:scale-[0.98]">
-                  <div class="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                    :style="{background: c.cor+'20', color: c.cor}">
-                    {{ c.banco.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
-                  </div>
-                  <span class="text-gray-600 text-xl font-bold">›</span>
-                </button>
-              </div>
-              </Transition>
-
-            </div>
+            <div v-else v-html="formatFinoraMessage(msg.text)"></div>
           </div>
         </div>
-      </Transition>
-    </Teleport>
-
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <!-- MODAL TRANSFERÊNCIA — STEP BY STEP                         -->
-    <!-- ═══════════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <Transition name="modal-slide">
-        <div v-if="modalTransferencia"
-          style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.82);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:1rem;"
-          @click.self="fecharTransferenciaStep">
-
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full sm:max-w-md shadow-2xl overflow-hidden flex flex-col" style="max-height:90dvh;">
-
-
-            <!-- Header -->
-            <div class="flex items-center justify-between px-5 pt-4 pb-3 flex-shrink-0">
-              <div class="flex items-center gap-2.5">
-                <button v-if="passoTransf > 1" @click="passoTransf--; buscaUsuario=''; usuariosEncontrados=[]"
-                  class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white text-base font-bold transition-all flex-shrink-0">
-                  ‹
-                </button>
-                <div>
-                  <h3 class="font-black text-sm leading-tight">🔄 Transferência</h3>
-                  <p class="text-[10px] text-gray-500 leading-tight mt-0.5">
-                    {{ passoTransf === 1 ? 'Para onde?' :
-                       passoTransf === 2 && formTransf.tipo === 'propria' ? 'Conta destino' :
-                       passoTransf === 2 && formTransf.tipo === 'externo' ? 'Destinatário' :
-                       passoTransf === 3 && formTransf.tipo === 'propria' ? 'Valor' :
-                       passoTransf === 3 && formTransf.tipo === 'externo' ? 'Conta do destinatário' :
-                       passoTransf === 4 && formTransf.tipo === 'propria' ? 'Conta de origem' :
-                       passoTransf === 4 && formTransf.tipo === 'externo' ? 'Valor' :
-                       'Conta de origem' }}
-                    · passo {{ passoTransf }} de {{ formTransf.tipo === 'propria' ? 4 : (passoTransf < 2 ? 5 : 5) }}
-                  </p>
-                </div>
-              </div>
-              <button @click="fecharTransferenciaStep"
-                class="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 hover:text-white transition-all flex-shrink-0">
-                <span class="text-xs font-black">✕</span>
-              </button>
-            </div>
-
-            <!-- Progress -->
-            <div class="h-[2px] bg-white/5 flex-shrink-0">
-              <div class="h-full bg-blue-500 transition-all duration-500 rounded-full"
-                :style="{width: (passoTransf / (formTransf.tipo === 'propria' ? 4 : 5) * 100)+'%'}"></div>
-            </div>
-
-            <div class="overflow-y-auto max-h-[78dvh]">
-
-              <!-- PASSO 1: TIPO DE DESTINO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 1" key="t1" class="p-5 space-y-3">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest pb-1">Para onde deseja transferir?</p>
-                <button @click="selecionarTipoTransf('propria')"
-                  :disabled="accounts.contas.length < 2"
-                  class="w-full flex items-center gap-4 p-4 rounded-2xl border border-teal-500/20 bg-teal-500/6 hover:bg-teal-500/12 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  <div class="w-14 h-14 rounded-2xl bg-teal-500/12 flex items-center justify-center text-3xl flex-shrink-0">🔄</div>
-                  <div class="text-left">
-                    <p class="font-black text-teal-400 text-base">Minha conta</p>
-                    <p class="text-xs text-gray-500 mt-0.5">Transferir entre suas próprias contas</p>
-                    <p v-if="accounts.contas.length < 2" class="text-[10px] text-yellow-500 mt-0.5">Requer ao menos 2 contas</p>
-                  </div>
-                  <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
-                </button>
-                <button @click="selecionarTipoTransf('externo')"
-                  class="w-full flex items-center gap-4 p-4 rounded-2xl border border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/12 active:scale-[0.98] transition-all">
-                  <div class="w-14 h-14 rounded-2xl bg-blue-500/12 flex items-center justify-center text-3xl flex-shrink-0">👤</div>
-                  <div class="text-left">
-                    <p class="font-black text-blue-400 text-base">Outro usuário</p>
-                    <p class="text-xs text-gray-500 mt-0.5">Enviar para conta de outra pessoa</p>
-                  </div>
-                  <span class="ml-auto text-gray-600 text-xl font-bold">›</span>
-                </button>
-              </div>
-              </Transition>
-
-              <!-- PASSO 2 (propria): CONTA DESTINO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 2 && formTransf.tipo === 'propria'" key="t2p" class="p-5 space-y-2">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">Para qual conta?</p>
-                <button v-for="c in accounts.contas" :key="c.id"
-                  @click="selecionarContaDestinoStep(c.id)"
-                  class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-white/8 bg-white/3 hover:border-blue-500/30 hover:bg-blue-500/6 transition-all active:scale-[0.98]">
-                  <div class="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                    :style="{background: c.cor+'20', color: c.cor}">
-                    {{ c.banco.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
-                  </div>
-                  <span class="text-gray-600 text-xl font-bold">›</span>
-                </button>
-              </div>
-              </Transition>
-
-              <!-- PASSO 2 (externo): SELECIONAR USUÁRIO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 2 && formTransf.tipo === 'externo'" key="t2e" class="p-5 space-y-3">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Selecionar destinatário</p>
-                <div class="relative">
-                  <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-600 text-sm">🔍</span>
-                  <input v-model="buscaUsuario" @input="debounceUsuarios" type="text"
-                    placeholder="Buscar por nome ou e-mail..."
-                    class="w-full bg-white/5 border border-white/10 pl-9 pr-4 py-3 rounded-2xl outline-none focus:border-blue-500 transition-all text-sm placeholder:text-gray-700" />
-                  <div v-if="buscandoUsuarios || buscandoRecentes"
-                    class="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
-                </div>
-                <div class="space-y-1.5">
-                  <p v-if="!buscaUsuario && usuariosDestino.length" class="text-[10px] text-gray-600 font-bold uppercase tracking-widest px-1">Usuários disponíveis</p>
-                  <button v-for="u in usuariosDestino" :key="u.id"
-                    @click="selecionarUsuarioStep(u)"
-                    :class="formTransf.usuarioDestinoId === u.id
-                      ? 'border-blue-500/50 bg-blue-500/10'
-                      : 'border-white/8 bg-white/3 hover:border-white/15 hover:bg-white/5'"
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
-                    <div class="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center text-sm font-black text-blue-300 flex-shrink-0">
-                      {{ u.nome.charAt(0).toUpperCase() }}
-                    </div>
-                    <div class="flex-1 text-left min-w-0">
-                      <p class="text-sm font-semibold truncate">{{ u.nome }}</p>
-                      <p class="text-xs text-gray-500 truncate">{{ u.email }}</p>
-                    </div>
-                    <span v-if="formTransf.usuarioDestinoId === u.id" class="text-blue-400 font-black text-sm flex-shrink-0">✓</span>
-                    <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
-                  </button>
-                  <div v-if="buscaUsuario.length >= 2 && !buscandoUsuarios && !usuariosDestino.length"
-                    class="py-8 text-center text-gray-600 text-sm">
-                    Nenhum usuário encontrado
-                  </div>
-                  <div v-if="!buscaUsuario && !buscandoRecentes && !usuariosDestino.length"
-                    class="py-8 text-center text-gray-600 text-sm">
-                    Digite para buscar usuários
-                  </div>
-                </div>
-              </div>
-              </Transition>
-
-              <!-- PASSO 3 (propria): VALOR -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 3 && formTransf.tipo === 'propria'" key="t3p" class="p-5 space-y-4">
-                <div class="flex items-center gap-3 bg-white/3 rounded-2xl px-4 py-3">
-                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                    :style="{background: (accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.cor||'#3b82f6')+'20', color: accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.cor||'#3b82f6'}">
-                    {{ (accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.banco||'?').charAt(0) }}
-                  </div>
-                  <div>
-                    <p class="text-[10px] text-gray-500">Conta destino</p>
-                    <p class="text-sm font-semibold">{{ accounts.contas.find(c=>c.id===formTransf.contaDestinoId)?.banco }}</p>
-                  </div>
-                </div>
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">Qual valor?</p>
-                <div class="relative">
-                  <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">R$</span>
-                  <input ref="inputValorTransf" @input="e => e.target.value = mascaraMoeda(e.target.value)"
-                    inputmode="decimal" placeholder="0,00"
-                    class="w-full bg-white/5 border border-white/10 pl-10 pr-4 py-4 rounded-2xl outline-none focus:border-blue-500 transition-all text-2xl font-black text-center placeholder:text-gray-700" />
-                </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <button v-for="v in valoresRapidosTransf" :key="v.val" @click="setValorRapidoTransf(v.val)"
-                    class="py-2 rounded-xl bg-white/5 border border-white/8 hover:bg-white/10 text-xs font-bold transition-all active:scale-[0.95]">
-                    {{ v.label }}
-                  </button>
-                </div>
-                <button @click="confirmarValorTransf"
-                  class="w-full py-4 rounded-2xl font-black text-sm text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]">
-                  Próximo → Conta de origem
-                </button>
-              </div>
-              </Transition>
-
-              <!-- PASSO 3 (externo): CONTA DO DESTINATÁRIO -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 3 && formTransf.tipo === 'externo'" key="t3e" class="p-5 space-y-2">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">Conta do destinatário</p>
-                <div v-if="!contasUsuarioDestino.length" class="py-8 flex flex-col items-center gap-2 text-gray-600 text-sm">
-                  <div class="w-5 h-5 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
-                  Carregando contas...
-                </div>
-                <button v-for="c in contasUsuarioDestino" :key="c.id"
-                  @click="selecionarContaExternaStep(c.id)"
-                  :class="formTransf.contaExternaId === c.id
-                    ? 'border-blue-500/50 bg-blue-500/10'
-                    : 'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all active:scale-[0.98]">
-                  <div class="w-11 h-11 rounded-xl bg-blue-500/12 flex items-center justify-center text-sm font-black text-blue-400 flex-shrink-0">
-                    {{ c.banco.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    <p class="text-xs text-gray-500">{{ c.nome }}</p>
-                  </div>
-                  <span v-if="formTransf.contaExternaId === c.id" class="text-blue-400 font-black text-sm flex-shrink-0">✓</span>
-                  <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
-                </button>
-              </div>
-              </Transition>
-
-              <!-- PASSO 4 (externo): VALOR -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="passoTransf === 4 && formTransf.tipo === 'externo'" key="t4e" class="p-5 space-y-4">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">Qual valor deseja enviar?</p>
-                <div class="relative">
-                  <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold">R$</span>
-                  <input ref="inputValorTransf" @input="e => e.target.value = mascaraMoeda(e.target.value)"
-                    inputmode="decimal" placeholder="0,00"
-                    class="w-full bg-white/5 border border-white/10 pl-10 pr-4 py-4 rounded-2xl outline-none focus:border-blue-500 transition-all text-2xl font-black text-center placeholder:text-gray-700" />
-                </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <button v-for="v in valoresRapidosTransf" :key="v.val" @click="setValorRapidoTransf(v.val)"
-                    class="py-2 rounded-xl bg-white/5 border border-white/8 hover:bg-white/10 text-xs font-bold transition-all active:scale-[0.95]">
-                    {{ v.label }}
-                  </button>
-                </div>
-                <input v-model="formTransf.descricao" type="text" placeholder="Descrição (opcional)"
-                  class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-white/20 transition-all text-sm placeholder:text-gray-700" />
-                <button @click="confirmarValorTransf"
-                  class="w-full py-4 rounded-2xl font-black text-sm text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]">
-                  Próximo → Conta de origem
-                </button>
-              </div>
-              </Transition>
-
-              <!-- PASSO 4 (propria) / PASSO 5 (externo): CONTA ORIGEM -->
-              <Transition name="step-fade" mode="out-in">
-              <div v-if="(passoTransf === 4 && formTransf.tipo === 'propria') || (passoTransf === 5 && formTransf.tipo === 'externo')" key="torigem" class="p-5 space-y-2">
-                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-4">De qual conta vai sair?</p>
-                <button v-for="c in contasOrigemTransf" :key="c.id"
-                  @click="formTransf.contaOrigemId = c.id; realizarTransferenciaStep()"
-                  :disabled="loadingTransferencia"
-                  class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border border-white/8 bg-white/3 hover:border-teal-500/30 hover:bg-teal-500/6 transition-all active:scale-[0.98] disabled:opacity-60">
-                  <div class="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                    :style="{background: c.cor+'20', color: c.cor}">
-                    {{ c.banco.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
-                  </div>
-                  <div v-if="loadingTransferencia && formTransf.contaOrigemId === c.id"
-                    class="w-5 h-5 border-2 border-teal-400/30 border-t-teal-400 rounded-full animate-spin flex-shrink-0"></div>
-                  <span v-else class="text-gray-600 text-xl font-bold flex-shrink-0">›</span>
-                </button>
-              </div>
-              </Transition>
-
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    
-    <!-- MODAL CONTA -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalConta" style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.8);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
-            <div class="flex items-center justify-between mb-5">
-              <h3 class="font-black text-base">🏦 Nova Conta</h3>
-              <button @click="modalConta=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-            <div class="space-y-4">
-              <div>
-                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Banco</label>
-                <div class="grid grid-cols-3 gap-2 mb-2">
-                  <button type="button" v-for="b in bancosRapidos" :key="b" @click="formConta.banco=b"
-                    :class="formConta.banco===b?'border-teal-500 bg-teal-500/15 text-teal-400':'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-white'"
-                    class="py-2.5 rounded-xl border text-xs font-bold transition-all">{{ b }}</button>
-                </div>
-                <input v-model="formConta.banco" type="text" placeholder="Ou digite o banco..."
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Saldo atual</label>
-                <input ref="inputSaldo" @input="mascaraMoeda" type="text" inputmode="numeric" placeholder="R$ 0,00"
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono text-2xl font-black placeholder:text-gray-700" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Cor</label>
-                <div class="flex gap-2 flex-wrap">
-                  <button type="button" v-for="cor in cores" :key="cor" @click="formConta.cor=cor"
-                    class="w-10 h-10 rounded-full border-2 transition-all hover:scale-110 active:scale-95"
-                    :style="{backgroundColor:cor}"
-                    :class="formConta.cor===cor?'border-white scale-110 shadow-lg':'border-transparent'" />
-                </div>
-              </div>
-              <div class="flex gap-3 pt-1">
-                <button type="button" @click="modalConta=false" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
-                <button type="button" @click="criarConta" :disabled="loadingConta"
-                  class="flex-1 bg-teal-500 hover:bg-teal-600 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-teal-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
-                  <svg v-if="loadingConta" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                  <span>{{ loadingConta ? 'Salvando...' : 'Salvar' }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-
-    
-    <!-- MODAL ITEM -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalItem" style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.8);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl p-6 w-full sm:max-w-sm shadow-2xl">
-            <div class="flex items-center justify-between mb-5">
-              <h3 class="font-black text-base">{{ subAbaInv==='venda'?'📦 Item à Venda':'🛒 Registrar Compra' }}</h3>
-              <button @click="modalItem=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-            <div class="space-y-3">
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Nome do item</label>
-                <input v-model="formItem.nome" type="text"
-                  :placeholder="subAbaInv==='venda'?'Ex: Notebook, PS5...':'Ex: Teclado, Monitor...'"
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">Descrição <span class="text-gray-700 normal-case">(opcional)</span></label>
-                <input v-model="formItem.descricao" type="text" placeholder="Condição, detalhes..."
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
-              </div>
-              <div>
-                <label class="text-xs text-gray-500 mb-1 block font-semibold uppercase tracking-wider">{{ subAbaInv==='venda'?'Preço de venda':'Valor pago' }}</label>
-                <input ref="inputValorItem" @input="mascaraMoeda" type="text" inputmode="numeric" placeholder="R$ 0,00"
-                  class="w-full bg-white/5 border border-white/10 px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono text-2xl font-black placeholder:text-gray-700" />
-              </div>
-              <div v-if="subAbaInv==='compra'">
-                <label class="text-xs text-gray-500 mb-2 block font-semibold uppercase tracking-wider">Descontar de qual conta</label>
-                <div class="flex gap-2 flex-wrap">
-                  <button type="button" v-for="c in accounts.contas" :key="c.id" @click="formItem.accountId=c.id"
-                    :class="formItem.accountId===c.id?'border-blue-500 bg-blue-500/15 text-blue-400':'border-white/10 bg-white/5 text-gray-400'"
-                    class="px-3 py-2 rounded-xl border text-sm font-semibold transition-all">{{ c.banco }}</button>
-                </div>
-              </div>
-              <div class="flex gap-3 pt-2">
-                <button type="button" @click="modalItem=false" class="flex-1 bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">Cancelar</button>
-                <button type="button" @click="criarItem"
-                  :class="subAbaInv==='venda'?'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20':'bg-blue-500 hover:bg-blue-600 shadow-blue-500/20'"
-                  class="flex-1 py-3 rounded-2xl font-black text-sm transition-all shadow-lg">Salvar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-
-    
-    <!-- MODAL ALERTAS DE ORÇAMENTO -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalAlertas" style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.8);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full sm:max-w-md shadow-2xl" style="max-height:90dvh;overflow-y:auto;">
-            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
-              <div class="w-10 h-1 rounded-full bg-white/20"></div>
-            </div>
-            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10 border-b border-white/5">
-              <h3 class="font-black text-base">🔔 Alertas de Orçamento</h3>
-              <button @click="modalAlertas=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-
-            <!-- Form: novo alerta -->
-            <div class="px-5 pt-4 pb-3 border-b border-white/5">
-              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">Definir limite por categoria</p>
-
-              <!-- Seleção de categoria -->
-              <div class="grid grid-cols-4 gap-2 mb-3">
-                <button v-for="cat in categoriasSaida" :key="cat.id"
-                  @click="formAlerta.categoria=cat.id"
-                  :class="formAlerta.categoria===cat.id?'border-amber-500 bg-amber-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all active:scale-[0.97]">
-                  <span class="text-base">{{ cat.emoji }}</span>
-                  <span class="text-[10px] text-gray-400 font-semibold leading-tight text-center">{{ cat.label }}</span>
-                </button>
-              </div>
-
-              <!-- Valor limite -->
-              <div class="flex gap-2 items-center">
-                <input ref="inputValorAlerta" @input="mascaraMoeda" type="text" inputmode="numeric"
-                  placeholder="R$ 0,00"
-                  class="flex-1 bg-white/5 border border-white/10 text-amber-400 text-xl font-black text-center px-4 py-3 rounded-2xl outline-none focus:border-amber-500 transition-all font-mono placeholder:text-gray-700" />
-                <button @click="salvarAlerta"
-                  :disabled="loadingAlerta"
-                  class="bg-amber-500 hover:bg-amber-600 text-white font-black px-5 py-3 rounded-2xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
-                  <svg v-if="loadingAlerta" class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                  <span v-if="!loadingAlerta">{{ budgets.budgets.find(b=>b.categoria===formAlerta.categoria) ? 'Atualizar' : 'Criar' }}</span>
-                  <span v-else>...</span>
-                </button>
-              </div>
-              <p v-if="formAlerta.categoria" class="mt-2 text-xs text-gray-600">
-                Alerta para: <span class="text-amber-400 font-semibold">{{ labelCat[formAlerta.categoria] }}</span>
-                <span v-if="budgets.budgets.find(b=>b.categoria===formAlerta.categoria)" class="text-gray-600">
-                  — limite atual: {{ formatar(budgets.budgets.find(b=>b.categoria===formAlerta.categoria)?.limite || 0) }}
-                </span>
-              </p>
-            </div>
-
-            <!-- Lista de alertas configurados -->
-            <div class="px-5 py-4">
-              <p class="text-xs text-gray-500 mb-3 font-semibold uppercase tracking-wider">
-                Alertas configurados
-                <span class="text-gray-700 ml-1">({{ budgets.budgets.length }})</span>
-              </p>
-
-              <div v-if="budgets.budgets.length === 0" class="py-8 text-center">
-                <p class="text-3xl mb-2">🔕</p>
-                <p class="text-gray-600 text-sm">Nenhum alerta configurado ainda.</p>
-              </div>
-
-              <div class="space-y-2">
-                <div v-for="b in budgets.budgets" :key="b.id"
-                  class="flex items-center gap-3 bg-white/3 border border-white/8 rounded-2xl px-4 py-3">
-
-                  <!-- Ícone e nome -->
-                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0"
-                    :class="b.gastoAtual >= b.limite ? 'bg-red-500/15' : b.gastoAtual >= b.limite*0.7 ? 'bg-amber-500/15' : 'bg-teal-500/15'">
-                    {{ emojiCat[b.categoria] || '📦' }}
-                  </div>
-
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center justify-between mb-1">
-                      <p class="text-sm font-semibold">{{ labelCat[b.categoria] || b.categoria }}</p>
-                      <span class="text-xs tabular-nums font-black"
-                        :class="b.gastoAtual >= b.limite ? 'text-red-400' : b.gastoAtual >= b.limite*0.7 ? 'text-amber-400' : 'text-teal-400'">
-                        {{ formatar(b.gastoAtual) }} / {{ formatar(b.limite) }}
-                      </span>
-                    </div>
-                    <!-- Barra de progresso -->
-                    <div class="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                      <div class="h-full rounded-full transition-all duration-700"
-                        :class="b.gastoAtual >= b.limite ? 'bg-red-500' : b.gastoAtual >= b.limite*0.7 ? 'bg-amber-500' : 'bg-teal-500'"
-                        :style="{width: Math.min((b.gastoAtual/b.limite)*100, 100)+'%'}"></div>
-                    </div>
-                    <p class="text-xs text-gray-600 mt-0.5 tabular-nums">{{ Math.round((b.gastoAtual/b.limite)*100) }}% do limite</p>
-                  </div>
-
-                  <!-- Toggle ativo + Deletar -->
-                  <div class="flex items-center gap-1 flex-shrink-0">
-                    <button @click="toggleAlerta(b)"
-                      :class="b.ativo?'bg-teal-500/20 text-teal-400':'bg-white/5 text-gray-600'"
-                      class="w-8 h-8 flex items-center justify-center rounded-xl transition-all text-sm hover:scale-110">
-                      {{ b.ativo ? '🔔' : '🔕' }}
-                    </button>
-                    <button @click="budgets.deletar(b.id).then(()=>mostrarToast('🗑️ Alerta removido'))"
-                      class="w-8 h-8 flex items-center justify-center rounded-xl text-gray-700 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm">✕</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="px-5 pb-6">
-              <button @click="modalAlertas=false"
-                class="w-full bg-white/5 hover:bg-white/10 py-3 rounded-2xl text-sm font-semibold transition-all">
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-
-
-    
-    <!-- MODAL EDITAR TRANSAÇÃO -->
-    <Teleport to="body">
-      <Transition name="slide-up">
-        <div v-if="modalEditar" style="position:fixed;top:0;left:0;right:0;height:100dvh;z-index:9999;background:rgba(0,0,0,0.8);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;">
-          <div class="bg-[#13161f] border border-white/10 rounded-3xl w-full sm:max-w-md shadow-2xl" style="max-height:90dvh;overflow-y:auto;">
-            <div class="flex justify-center pt-3 pb-1 sm:hidden sticky top-0 bg-[#13161f] z-10">
-              <div class="w-10 h-1 rounded-full bg-white/20"></div>
-            </div>
-            <div class="flex items-center justify-between px-5 py-3 sticky top-4 sm:static bg-[#13161f] z-10">
-              <h3 class="font-black text-base">✏️ Editar Transação</h3>
-              <button @click="modalEditar=false" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-gray-400 hover:text-white transition-all">✕</button>
-            </div>
-
-            <!-- Tipo -->
-            <div class="px-5 mb-4">
-              <div class="flex bg-white/5 rounded-2xl p-1 gap-1">
-                <button @click="formEditar.tipo='receita'; formEditar.categoria='salario'"
-                  :class="formEditar.tipo==='receita'?'bg-green-500 text-white shadow-lg shadow-green-500/20':'text-gray-500 hover:text-gray-300'"
-                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬆️ Entrada</button>
-                <button @click="formEditar.tipo='despesa'; formEditar.categoria='mercado'"
-                  :class="formEditar.tipo==='despesa'?'bg-red-500 text-white shadow-lg shadow-red-500/20':'text-gray-500 hover:text-gray-300'"
-                  class="flex-1 py-3 rounded-xl text-sm font-black transition-all">⬇️ Saída</button>
-              </div>
-            </div>
-
-            <!-- Categorias -->
-            <div class="px-5 mb-4">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Categoria</p>
-              <div class="grid grid-cols-4 gap-2">
-                <button v-for="cat in (formEditar.tipo==='receita' ? categoriasEntrada : categoriasSaida)" :key="cat.id"
-                  @click="formEditar.categoria=cat.id"
-                  :class="formEditar.categoria===cat.id?'border-teal-500 bg-teal-500/15':'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="flex flex-col items-center gap-1 py-2.5 rounded-xl border transition-all active:scale-[0.97]">
-                  <span class="text-base">{{ cat.emoji }}</span>
-                  <span class="text-[10px] text-gray-400 font-semibold">{{ cat.label }}</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Conta -->
-            <div class="px-5 mb-4">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Conta</p>
-              <div class="space-y-2">
-                <button v-for="c in accounts.contas" :key="c.id"
-                  @click="formEditar.accountId=c.id"
-                  :class="formEditar.accountId===c.id?'border-teal-500 bg-teal-500/10':'border-white/8 bg-white/3 hover:border-white/15'"
-                  class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98]">
-                  <div class="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
-                    :style="{background: c.cor+'22', color: c.cor}">
-                    {{ c.banco.charAt(0).toUpperCase() }}
-                  </div>
-                  <div class="flex-1 text-left">
-                    <p class="text-sm font-semibold">{{ c.banco }}</p>
-                    <p class="text-xs text-gray-500 tabular-nums">{{ formatar(c.saldo) }}</p>
-                  </div>
-                  <div v-if="formEditar.accountId===c.id" class="text-teal-400 font-black text-sm">✓</div>
-                </button>
-              </div>
-            </div>
-
-            <!-- Valor -->
-            <div class="px-5 mb-3">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Valor</p>
-              <input ref="inputValorEditar" @input="mascaraMoeda" type="text" inputmode="numeric"
-                placeholder="R$ 0,00"
-                class="w-full bg-white/5 border border-white/10 text-teal-400 text-3xl font-black text-center px-4 py-4 rounded-2xl outline-none focus:border-teal-500 transition-all font-mono placeholder:text-gray-700" />
-            </div>
-
-            <!-- Descrição -->
-            <div class="px-5 mb-3">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Descrição</p>
-              <input v-model="formEditar.descricao" type="text" placeholder="Descrição..."
-                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm placeholder:text-gray-700" />
-            </div>
-
-            <!-- Data -->
-            <div class="px-5 mb-5">
-              <p class="text-xs text-gray-500 mb-2 font-semibold uppercase tracking-wider">Data</p>
-              <input v-model="formEditar.data" type="date"
-                class="w-full bg-white/5 border border-white/8 text-white px-4 py-3 rounded-2xl outline-none focus:border-teal-500 transition-all text-sm" />
-            </div>
-
-            <!-- Salvar -->
-            <div class="px-5 pb-6 flex gap-3">
-              <button @click="modalEditar=false"
-                class="flex-1 bg-white/5 hover:bg-white/10 py-4 rounded-2xl text-sm font-semibold transition-all">
-                Cancelar
-              </button>
-              <button @click="salvarEdicao"
-                :disabled="loadingEditar"
-                :class="formEditar.tipo==='receita'?'bg-green-500 hover:bg-green-600 shadow-green-500/20':'bg-teal-500 hover:bg-teal-600 shadow-teal-500/20'"
-                class="flex-1 py-4 rounded-2xl font-black text-base shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2">
-                <svg v-if="loadingEditar" class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                <span v-if="!loadingEditar">✅ Salvar</span>
-                <span v-else>Salvando...</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-
-
+      </div>
+      <div class="finora-chat-footer">
+        <input v-model="finoraInput" @keyup.enter="sendFinoraMessage" type="text" placeholder="Pergunte sobre finanças..." class="ios-input" />
+        <button @click="sendFinoraMessage" class="ios-btn-full" style="width:auto;padding:.6rem 1rem;background:linear-gradient(135deg,#7c3aed,#a855f7)">Enviar</button>
+      </div>
+    </div>
   </div>
+</div>
+</Transition></Teleport>
+
 </template>
 
 <style scoped>
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+.ios-app, .ios-modal-bg { --bg: #07030e; --surface: #0f081c; --surface2: #160c26; --surface3: #1e1135; --blue: #7c3aed; --green: #34d399; --red: #f472b6; --orange: #fb923c; --teal: #a78bfa; --purple: #c084fc; --neon: #b57aff; --neon2: #e879f9; --sep: rgba(139,120,255,.08); --text2: #8b89a8; --text3: rgba(139,137,168,.4); --r: 20px; --r-lg: 28px; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+@keyframes neonPulse { 0%,100% { opacity: .6; } 50% { opacity: 1; } }
+@keyframes neonFloat { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-8px) scale(1.03); } }
+.ios-app { min-height: 100dvh; background-color: var(--bg); display: flex; flex-direction: column; overflow-x: hidden; transition: background 0.3s; }
+
+/* Splash */
+.ios-splash { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; }
+.ios-splash-inner { text-align: center; }
+.ios-spinner { width: 28px; height: 28px; border: 2.5px solid rgba(255,255,255,.1); border-top-color: var(--teal); border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto; }
+.ios-spinner.sm { width: 16px; height: 16px; border-width: 2px; }
+.ios-spinner.white { border-color: rgba(255,255,255,.3); border-top-color: #fff; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toast */
+.ios-toast { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 9999; background: var(--surface2); border: 1px solid rgba(139,120,255,.15); color: #fff; padding: .75rem 1.5rem; border-radius: 99px; font-size: .85rem; font-weight: 600; backdrop-filter: blur(20px); box-shadow: 0 8px 32px rgba(10,5,30,.6), 0 0 20px rgba(124,58,237,.15); white-space: nowrap; }
+.ios-toast-enter-active, .ios-toast-leave-active { transition: all .3s cubic-bezier(.2,1,.3,1); }
+.ios-toast-enter-from { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(.95); }
+.ios-toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+
+/* Overlay */
+.ios-overlay { position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; }
+.ios-loading-card { background: var(--surface); border: 1px solid var(--sep); border-radius: var(--r); padding: 1.5rem 2rem; display: flex; align-items: center; gap: 1rem; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+.ios-loading-card span { font-size: .875rem; color: var(--text2); }
+
+/* Header */
+.ios-header { background: rgba(12,11,20,.92); backdrop-filter: blur(24px) saturate(180%); border-bottom: 1px solid rgba(255,255,255,.04); padding: 0 1.5rem; height: 4rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 40; box-shadow: 0 4px 30px rgba(0,0,0,0.5); }
+.ios-header-left { display: flex; align-items: center; gap: .75rem; }
+.ios-logo { width: 2.25rem; height: 2.25rem; border-radius: 10px; background: linear-gradient(135deg, #7c3aed, #a855f7); display: flex; align-items: center; justify-content: center; font-size: 1rem; box-shadow: 0 0 16px rgba(124,58,237,.35); }
+@media(min-width: 768px) { .ios-header-title { display: block !important; color: #fff; } }
+
+.ios-header-nav { display: none; }
+@media(min-width: 1024px) {
+  .ios-header-nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    background: rgba(20, 18, 32, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 0.35rem;
+    border-radius: 99px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    position: relative;
+    z-index: 50;
+    pointer-events: auto;
+    width: 480px;
+    box-shadow: inset 0 2px 12px rgba(0,0,0,0.3);
+  }
+  .ios-nav-slider {
+    position: absolute;
+    top: 0.35rem;
+    bottom: 0.35rem;
+    left: 0.35rem;
+    width: calc((100% - 0.7rem) / 5);
+    background: linear-gradient(135deg, rgba(124,58,237,.35), rgba(192,132,252,.2));
+    border: 0.5px solid rgba(192,132,252,.35);
+    box-shadow: 0 8px 24px rgba(124,58,237,.25), inset 0 1px 1px rgba(255,255,255,0.15);
+    border-radius: 99px;
+    transition: transform 0.4s cubic-bezier(0.2, 1, 0.3, 1);
+    z-index: 50;
+    pointer-events: none;
+  }
+  .ios-header-tab {
+    padding: 0.45rem 0;
+    border-radius: 99px;
+    border: none;
+    background: transparent !important;
+    color: var(--text3);
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+    z-index: 51;
+    text-align: center;
+    box-shadow: none !important;
+  }
+  .ios-header-tab:hover { color: var(--text2); }
+  .ios-header-tab.active {
+    color: #fff;
+    text-shadow: 0 2px 12px rgba(192,132,252,0.6);
+  }
 }
 
-.slide-up-enter-active, .slide-up-leave-active { transition: transform .35s cubic-bezier(.16,1,.3,1), opacity .35s; }
-.slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); opacity: 0; }
-@media(min-width: 640px) { .slide-up-enter-from, .slide-up-leave-to { transform: scale(.96) translateY(8px); } }
+.ios-header-right { display: flex; align-items: center; gap: 0.75rem; }
+.ios-user-badge { display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.03); padding: 0.35rem; padding-right: 1rem; border-radius: 99px; border: 1px solid rgba(255,255,255,0.04); }
+@media(max-width: 767px) { .ios-user-badge { padding-right: 0.35rem; background: transparent; border: none; } }
+.ios-avatar { width: 2.25rem; height: 2.25rem; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #a855f7); display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 800; flex-shrink: 0; box-shadow: 0 0 10px rgba(124,58,237,.25); }
+@media(min-width: 768px) { .ios-greeting { display: block !important; font-size: 0.8rem; color: var(--text2); } .ios-greeting strong { color: #fff; } }
 
+.ios-hdr-btn { width: 2.25rem; height: 2.25rem; border-radius: 50%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; font-size: .9rem; cursor: pointer; color: rgba(255,255,255,.6); transition: all .3s; }
+.ios-hdr-btn:hover { background: rgba(255,255,255,0.08); color: #fff; transform: scale(1.05); }
+.ios-hdr-btn-danger:hover { background: rgba(244,114,182,.1); color: var(--red); border-color: rgba(244,114,182,.2); }
+
+/* Main */
+.ios-main { flex: 1; padding: 1.5rem 1rem; padding-bottom: 6rem; display: flex; flex-direction: column; align-items: center; }
+@media(min-width:1024px) { .ios-main { padding: 2.5rem 3rem 3rem; } }
+.ios-content { display: flex; flex-direction: column; gap: 1.5rem; width: 100%; max-width: 1100px; margin: 0 auto; }
+
+/* Balance Card */
+@keyframes borderGlow { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+.ios-balance-card { position: relative; border-radius: var(--r-lg); overflow: hidden; transform-style: preserve-3d; will-change: transform; padding: 1px; background: linear-gradient(135deg, rgba(124,58,237,.5), rgba(168,85,247,.35), rgba(192,132,252,.2)); box-shadow: 0 10px 50px rgba(0,0,0,0.6), 0 0 40px rgba(124,58,237,.08); }
+.ios-balance-inner { position: relative; z-index: 1; padding: 2rem; background: linear-gradient(160deg, rgba(20,19,32,.95) 20%, rgba(60,40,120,.4) 80%, rgba(100,60,160,.3)); border-radius: calc(var(--r-lg) - 1px); overflow: hidden; }
+.ios-balance-inner::after { content: ''; position: absolute; top: 0; right: 0; width: 50%; height: 100%; background: radial-gradient(ellipse at 100% 0%, rgba(124,58,237,.2), transparent 60%); pointer-events: none; }
+.ios-balance-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; position: relative; z-index: 1; }
+.ios-balance-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: rgba(255,255,255,.5); }
+.ios-balance-sub { font-size: .65rem; color: rgba(255,255,255,.3); margin-top: .15rem; }
+.ios-balance-badge { font-size: .65rem; background: rgba(255,255,255,.06); border: .5px solid rgba(255,255,255,.1); padding: .3rem .75rem; border-radius: 99px; color: rgba(255,255,255,.6); text-transform: capitalize; backdrop-filter: blur(10px); }
+.ios-balance-value { font-size: 2.75rem; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; transition: all .5s cubic-bezier(.2,1,.3,1); line-height: 1.1; margin-bottom: .75rem; position: relative; z-index: 1; color: #fff; -webkit-text-fill-color: #fff; }
+.ios-balance-value.up { filter: drop-shadow(0 0 24px rgba(52,211,153,.6)); transform: scale(1.03); }
+.ios-balance-value.down { filter: drop-shadow(0 0 24px rgba(244,114,182,.6)); transform: scale(.97); }
+.ios-balance-diff { position: absolute; right: 1.75rem; top: 5rem; font-size: .75rem; font-weight: 800; padding: .25rem .7rem; border-radius: 99px; backdrop-filter: blur(12px); z-index: 2; }
+.ios-balance-diff.pos { background: rgba(52,211,153,.12); color: var(--green); border: .5px solid rgba(52,211,153,.3); box-shadow: 0 4px 16px rgba(52,211,153,.15), 0 0 8px rgba(52,211,153,.1); }
+.ios-balance-diff.neg { background: rgba(244,114,182,.12); color: var(--red); border: .5px solid rgba(244,114,182,.3); box-shadow: 0 4px 16px rgba(244,114,182,.15), 0 0 8px rgba(244,114,182,.1); }
+.ios-diff-enter-active { transition: all .4s cubic-bezier(.2,1,.3,1); }
+.ios-diff-leave-active { transition: all .6s; }
+.ios-diff-enter-from { opacity: 0; transform: translateY(6px) scale(.85); }
+.ios-diff-leave-to { opacity: 0; transform: translateY(-10px); }
+.ios-balance-bar { height: 5px; border-radius: 99px; background: rgba(255,255,255,.06); overflow: hidden; margin-bottom: .6rem; position: relative; z-index: 1; }
+.ios-balance-bar-fill { height: 100%; border-radius: 99px; transition: width 1s ease; position: relative; }
+.ios-balance-bar-fill.good { background: linear-gradient(90deg, var(--green), var(--teal)); box-shadow: 0 0 12px rgba(52,211,153,.4), 0 0 4px rgba(167,139,250,.3); }
+.ios-balance-bar-fill.warn { background: linear-gradient(90deg, var(--orange), var(--red)); box-shadow: 0 0 12px rgba(244,114,182,.4); }
+.ios-balance-row { display: flex; justify-content: space-between; font-size: .72rem; font-weight: 600; color: var(--text2); position: relative; z-index: 1; }
+
+/* Quick Actions */
+.ios-quick-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+@media(min-width:640px) { .ios-quick-grid { grid-template-columns: repeat(4, 1fr); } }
+.ios-quick-btn { display: flex; flex-direction: column; align-items: center; gap: .75rem; padding: 1.25rem .5rem; border-radius: 24px; background: rgba(20,19,32,.8); border: .5px solid rgba(255,255,255,.05); cursor: pointer; transition: all .3s cubic-bezier(.2,1,.3,1); color: #fff; font-family: inherit; box-shadow: 0 4px 20px rgba(0,0,0,.4); position: relative; overflow: hidden; }
+.ios-quick-btn::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 50% 0%, rgba(124,58,237,0.1), transparent 70%); opacity: 0; transition: opacity .3s; pointer-events: none; }
+.ios-quick-btn:hover { transform: translateY(-5px); box-shadow: 0 8px 30px rgba(0,0,0,.5), 0 0 20px rgba(124,58,237,.1); border-color: rgba(124,58,237,.2); }
+.ios-quick-btn:hover::before { opacity: 1; }
+.ios-quick-btn:active { transform: scale(.96); }
+.ios-quick-btn span:last-child { font-size: .8rem; font-weight: 600; color: rgba(255,255,255,.7); letter-spacing: .02em; }
+.ios-quick-icon { width: 3.5rem; height: 3.5rem; border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); transition: transform .3s; color: #fff; }
+.ios-quick-btn:hover .ios-quick-icon { transform: scale(1.1) rotate(5deg); }
+.qb-green { background: rgba(52,211,153,.08); color: var(--green); }
+.qb-blue { background: rgba(124,58,237,.08); color: var(--blue); }
+.qb-orange { background: rgba(251,146,60,.08); color: var(--orange); }
+.qb-purple { background: rgba(192,132,252,.08); color: var(--purple); }
+
+/* Widgets */
+.ios-summary-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+@media(min-width:640px) { .ios-summary-grid { grid-template-columns: repeat(3, 1fr); } }
+.ios-widget { background: rgba(20,19,32,.85); border-radius: 28px; padding: 1.5rem; cursor: pointer; transition: all .4s cubic-bezier(.2,1,.3,1); transform-style: preserve-3d; display: flex; flex-direction: column; position: relative; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,.4); border: .5px solid rgba(255,255,255,.04); }
+.ios-widget::before { content: ''; position: absolute; top: 0; left: -100%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent); transform: skewX(-20deg); transition: all .7s ease; }
+.ios-widget::after { content: ''; position: absolute; top: 0; right: 0; width: 150px; height: 150px; background: radial-gradient(circle, rgba(124,58,237,0.04) 0%, transparent 70%); transform: translate(30%, -30%); pointer-events: none; }
+.ios-widget:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 12px 40px rgba(0,0,0,.5), 0 0 25px rgba(124,58,237,.08); border-color: rgba(124,58,237,.15); }
+.ios-widget:hover::before { left: 150%; }
+.ios-widget-icon { width: 2.75rem; height: 2.75rem; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; margin-bottom: 1rem; box-shadow: inset 0 0 0 1px rgba(255,255,255,.04); color: #fff; }
+.ios-widget-label { font-size: .8rem; font-weight: 600; color: var(--text2); margin-bottom: .35rem; text-transform: uppercase; letter-spacing: .05em; }
+.ios-widget-value { font-weight: 800; font-size: 1.5rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.wg-green { background: rgba(52,211,153,.1); color: rgba(52,211,153,.9); }
+.wg-red { background: rgba(244,114,182,.1); color: rgba(244,114,182,.9); }
+.wg-teal { background: rgba(167,139,250,.1); color: rgba(167,139,250,.9); }
+.wg-purple { background: rgba(192,132,252,.1); color: rgba(192,132,252,.9); }
+.wg-orange { background: rgba(251,146,60,.1); color: rgba(251,146,60,.9); }
+.wg-green-text { color: var(--green); text-shadow: 0 0 18px rgba(52,211,153,.35); }
+.wg-red-text { color: var(--red); text-shadow: 0 0 18px rgba(244,114,182,.35); }
+.wg-teal-text { color: var(--teal); text-shadow: 0 0 18px rgba(167,139,250,.35); }
+.wg-purple-text { color: var(--purple); text-shadow: 0 0 18px rgba(192,132,252,.35); }
+.wg-orange-text { color: var(--orange); text-shadow: 0 0 18px rgba(251,146,60,.35); }
+.wg-blue-text { color: var(--blue); text-shadow: 0 0 18px rgba(124,58,237,.35); }
+
+/* Widget Cards */
+.ios-widget-card { background: rgba(20,19,32,.85); border-radius: 28px; overflow: hidden; transition: all .4s ease; transform-style: preserve-3d; box-shadow: 0 4px 20px rgba(0,0,0,.4); border: .5px solid rgba(255,255,255,.04); }
+.ios-widget-card:hover { border-color: rgba(124,58,237,.12); box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+.ios-wc-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 1rem; font-weight: 700; letter-spacing: .02em; background: rgba(0,0,0,0.15); }
+.ios-wc-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text2); padding: 0 1.5rem; padding-top: 1.5rem; margin-bottom: 1rem; }
+.ios-link { color: var(--neon); font-size: .8rem; font-weight: 600; background: none; border: none; cursor: pointer; font-family: inherit; transition: color .2s; }
+.ios-link:hover { color: var(--purple); text-decoration: none; }
+
+/* Account rows */
+.ios-account-row { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.5rem; border-top: 1px solid rgba(255,255,255,.03); transition: background .3s; }
+.ios-account-row:first-child { border-top: none; }
+.ios-account-row:hover { background: rgba(255,255,255,.02); }
+.ios-acc-icon { width: 2.5rem; height: 2.5rem; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 800; flex-shrink: 0; box-shadow: 0 4px 10px rgba(10,5,30,0.2); transition: transform .3s; }
+.ios-account-row:hover .ios-acc-icon { transform: scale(1.08); }
+.ios-acc-icon.lg { width: 3rem; height: 3rem; font-size: 1.25rem; border-radius: 14px; }
+.ios-acc-info { flex: 1; min-width: 0; }
+.ios-acc-name { font-size: .9rem; font-weight: 600; letter-spacing: .01em; color: rgba(255,255,255,.9); }
+.ios-acc-bar { height: 3px; border-radius: 99px; background: rgba(139,120,255,.06); margin-top: .35rem; overflow: hidden; }
+.ios-acc-bar.full { margin-top: .5rem; }
+.ios-acc-bar div { height: 100%; border-radius: 99px; transition: width .7s ease; }
+.ios-acc-val { font-weight: 800; font-size: .85rem; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+/* Alerts */
+.ios-alert-card { background: rgba(20,19,32,.8); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-radius: 20px; overflow: hidden; display: flex; align-items: center; gap: .75rem; padding: .85rem 1rem; border: .5px solid rgba(255,255,255,.04); }
+.ios-alert-card.ios-alert-danger { border-color: rgba(244,114,182,.2); }
+.ios-alert-card.ios-alert-warn { border-color: rgba(251,146,60,.2); }
+.ios-alert-icon { width: 2.5rem; height: 2.5rem; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; background: rgba(255,255,255,.03); }
+.ios-alert-body { flex: 1; min-width: 0; }
+.ios-alert-title { font-size: .8rem; font-weight: 700; margin-bottom: .15rem; }
+.ios-alert-danger .ios-alert-title { color: var(--red); text-shadow: 0 0 10px rgba(244,114,182,.2); }
+.ios-alert-warn .ios-alert-title { color: var(--orange); text-shadow: 0 0 10px rgba(251,146,60,.2); }
+.ios-alert-sub { font-size: .7rem; color: var(--text2); }
+.ios-alert-sub strong { font-weight: 800; }
+.ios-alert-bar { height: 3px; border-radius: 99px; background: rgba(255,255,255,.06); margin-top: .5rem; overflow: hidden; }
+.ios-alert-bar div { height: 100%; border-radius: 99px; transition: width .7s; }
+.bg-red { background: var(--red); }
+.bg-amber { background: var(--orange); }
+.bg-green { background: var(--green); }
+.bg-blue { background: var(--blue); }
+.bg-teal { background: var(--teal); }
+.bg-orange { background: var(--orange); }
+.bg-purple { background: var(--purple); }
+
+/* Empty states */
+.ios-empty-card { background: rgba(20,19,32,.6); border: 1px dashed rgba(255,255,255,.08); border-radius: 20px; padding: 2.5rem 1rem; text-align: center; color: var(--text2); font-size: .85rem; }
+.ios-empty-small { text-align: center; color: var(--text3); font-size: .8rem; padding: 1.5rem 0; }
+.ios-muted { color: var(--text2); font-size: .75rem; }
+
+/* Contas tab */
+.ios-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5rem; }
+.ios-section-title { font-size: 1.1rem; font-weight: 800; }
+.ios-total-banner { background: linear-gradient(135deg, rgba(124,58,237,.06), rgba(192,132,252,.04)); border: .5px solid rgba(124,58,237,.12); border-radius: var(--r); padding: 1rem; display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
+.ios-total-banner p:first-child { font-size: .8rem; color: var(--text2); }
+.ios-total-val { font-size: 1.25rem; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+.ios-cards-grid { display: grid; grid-template-columns: 1fr; gap: .75rem; }
+@media(min-width:640px) { .ios-cards-grid { grid-template-columns: repeat(2, 1fr); } }
+.ios-conta-card { background: rgba(20,19,32,.8); border: .5px solid rgba(255,255,255,.04); border-radius: 24px; padding: 1.5rem; position: relative; overflow: hidden; transition: all .3s; transform-style: preserve-3d; box-shadow: 0 4px 20px rgba(0,0,0,.35); }
+.ios-conta-card:hover { box-shadow: 0 8px 30px rgba(0,0,0,.5); border-color: rgba(124,58,237,.12); }
+.ios-conta-top-bar { position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+.ios-conta-header { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; }
+.ios-del-btn { margin-left: auto; width: 1.75rem; height: 1.75rem; border-radius: 8px; background: none; border: none; color: var(--text3); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: .7rem; transition: all .2s; opacity: .4; }
+.ios-conta-card:hover .ios-del-btn { opacity: 1; }
+.ios-del-btn:hover { background: rgba(244,114,182,.1); color: var(--red); }
+.ios-conta-saldo { font-size: 1.75rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-bottom: .75rem; }
+.ios-conta-footer { display: flex; justify-content: space-between; font-size: .7rem; color: var(--text3); margin-bottom: .35rem; }
+.ios-conta-footer span:last-child { font-weight: 600; }
+
+/* Pills & chips */
+.ios-pill-btn { font-size: .7rem; font-weight: 600; padding: .35rem .75rem; border-radius: 99px; border: none; cursor: pointer; transition: all .2s; font-family: inherit; background: rgba(124,58,237,.1); color: var(--neon); }
+.ios-pill-btn:hover { background: rgba(124,58,237,.2); box-shadow: 0 0 10px rgba(124,58,237,.15); }
+.ios-pill-btn.blue { background: rgba(124,58,237,.1); color: var(--blue); }
+.ios-pill-btn.green { background: rgba(52,211,153,.1); color: var(--green); }
+
+/* Segmented control */
+.ios-segmented { display: flex; background: rgba(20,19,32,.8); border: .5px solid rgba(255,255,255,.04); border-radius: 12px; padding: 3px; gap: 3px; margin-bottom: .75rem; }
+.ios-segmented.sm { margin-bottom: .5rem; }
+.ios-segmented button { flex: 1; padding: .6rem; border-radius: 9px; border: none; background: none; color: var(--text2); font-size: .75rem; font-weight: 600; cursor: pointer; transition: all .25s; font-family: inherit; }
+.ios-segmented button.active { background: linear-gradient(135deg, var(--blue), rgba(192,132,252,.7)); color: #fff; box-shadow: 0 2px 12px rgba(124,58,237,.35), 0 0 8px rgba(192,132,252,.15); }
+
+/* Transaction list */
+.ios-list-header { display: flex; justify-content: space-between; align-items: center; background: var(--surface); border: .5px solid rgba(139,120,255,.06); border-radius: var(--r); padding: .7rem 1rem; font-size: .75rem; color: var(--text3); margin-bottom: .5rem; }
+.ios-list-total { font-weight: 800; font-size: .85rem; }
+.ios-tx-row { display: flex; align-items: center; gap: .7rem; padding: .75rem 1rem; transition: background .2s; }
+.ios-tx-row:hover { background: rgba(255,255,255,.02); }
+.ios-tx-row.bordered { border-top: .5px solid rgba(255,255,255,.04); }
+.ios-tx-icon { width: 2.25rem; height: 2.25rem; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: .9rem; flex-shrink: 0; }
+.ios-tx-info { flex: 1; min-width: 0; }
+.ios-tx-desc { font-size: .85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ios-tx-right { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; }
+.ios-tx-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .2s; }
+.ios-tx-row:hover .ios-tx-actions { opacity: 1; }
+.ios-sm-btn { width: 1.75rem; height: 1.75rem; border-radius: 8px; background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: .7rem; color: var(--text3); transition: all .2s; }
+.ios-sm-btn:hover { background: rgba(167,139,250,.1); color: var(--teal); }
+.ios-sm-btn.danger:hover { background: rgba(244,114,182,.1); color: var(--red); }
+
+/* Metrics */
+.ios-metrics-section { display: flex; flex-direction: column; gap: .75rem; }
+.ios-period-label { font-size: .85rem; font-weight: 600; text-transform: capitalize; margin-bottom: .25rem; display: flex; align-items: center; gap: .5rem; }
+.ios-period-label::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--purple); box-shadow: 0 0 6px rgba(192,132,252,.5); }
+
+/* Donuts */
+.ios-donut-row { display: flex; align-items: center; gap: 1.5rem; padding: 0 1rem .75rem; }
+.ios-donut-wrap { position: relative; flex-shrink: 0; width: 8rem; height: 8rem; }
+.ios-donut { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ios-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ios-donut-legend { flex: 1; display: flex; flex-direction: column; gap: .4rem; }
+.ios-legend-item { display: flex; align-items: center; gap: .5rem; }
+.ios-legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.ios-legend-label { font-size: .75rem; color: var(--text2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ios-legend-pct { font-size: .75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ios-cat-bars { padding: .75rem 1rem 1rem; display: flex; flex-direction: column; gap: .75rem; }
+.ios-cat-bar-header { display: flex; justify-content: space-between; font-size: .8rem; margin-bottom: .35rem; }
+.ios-cat-bar-header span:first-child { font-weight: 600; }
+.ios-progress { height: 5px; border-radius: 99px; background: rgba(255,255,255,.04); overflow: hidden; }
+.ios-progress.sm { height: 3px; }
+.ios-progress div { height: 100%; border-radius: 99px; transition: width .7s ease; }
+
+/* Bottom Nav */
+.ios-bottomnav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: rgba(12,11,20,.94); backdrop-filter: blur(24px) saturate(180%); border-top: .5px solid rgba(255,255,255,.04); }
+@media(min-width:1024px) { .ios-bottomnav { display: none; } }
+.ios-bottomnav-inner { display: flex; align-items: center; justify-content: space-around; max-width: 28rem; margin: 0 auto; padding: .35rem .5rem; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+.ios-tab-btn { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: .25rem .5rem; background: none; border: none; cursor: pointer; color: rgba(255,255,255,.3); transition: color .2s; font-family: inherit; min-width: 3rem; }
+.ios-tab-btn.active { color: #fff; }
+.ios-tab-icon { font-size: 1.25rem; }
+.ios-tab-label { font-size: .6rem; font-weight: 600; }
+.ios-fab { display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; cursor: pointer; margin-top: -.75rem; font-family: inherit; }
+.ios-fab-inner { width: 3rem; height: 3rem; border-radius: 16px; background: linear-gradient(135deg, #7c3aed, #a855f7); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; box-shadow: 0 4px 20px rgba(124,58,237,.4); transition: transform .2s; }
+.ios-fab:active .ios-fab-inner { transform: scale(.92); }
+
+/* Modals */
+.ios-modal-bg { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.6); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.ios-modal-card { background: rgba(18,16,30,0.75); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); border: .5px solid rgba(255,255,255,.05); border-radius: var(--r-lg); width: 100%; max-width: 28rem; max-height: 90dvh; overflow-y: auto; box-shadow: 0 24px 80px rgba(0,0,0,.7); }
+.ios-modal-card.sm { max-width: 24rem; }
+.ios-modal-header { display: flex; align-items: center; gap: .75rem; padding: 1rem 1.25rem; border-bottom: .5px solid rgba(255,255,255,.04); position: sticky; top: 0; background: rgba(18,16,30,0.8); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); z-index: 1; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.ios-modal-header h3 { font-size: .9rem; font-weight: 700; color: #fff; }
+.ios-modal-header div { flex: 1; }
+.ios-modal-progress { height: 2px; background: rgba(139,120,255,.06); }
+.ios-modal-progress div { height: 100%; border-radius: 99px; transition: width .4s ease; }
+.ios-modal-body { padding: 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+.ios-back, .ios-close { width: 1.75rem; height: 1.75rem; border-radius: 50%; background: rgba(255,255,255,.06); border: none; color: rgba(255,255,255,.5); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; transition: all .2s; flex-shrink: 0; }
+.ios-back:hover, .ios-close:hover { background: rgba(255,255,255,.1); color: #fff; }
+
+/* Modal elements */
+.ios-step { display: flex; flex-direction: column; gap: .65rem; }
+.ios-step-title { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text2); }
+.ios-option-btn { display: flex; align-items: center; gap: .75rem; padding: .85rem; border-radius: 14px; border: .5px solid rgba(255,255,255,.05); background: rgba(255,255,255,.02); cursor: pointer; transition: all .2s; text-align: left; width: 100%; color: #fff; font-family: inherit; }
+.ios-option-btn:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.08); }
+.ios-option-btn:active { transform: scale(.98); }
+.ios-option-btn.selected { border-color: rgba(124,58,237,.4); background: rgba(124,58,237,.08); box-shadow: 0 0 12px rgba(124,58,237,.1); }
+.ios-option-btn:disabled { opacity: .4; cursor: not-allowed; }
+.ios-option-btn.green { border-color: rgba(52,211,153,.2); }
+.ios-option-btn.green:hover { background: rgba(52,211,153,.06); }
+.ios-option-btn.red { border-color: rgba(244,114,182,.2); }
+.ios-option-btn.red:hover { background: rgba(244,114,182,.06); }
+.ios-option-btn.teal { border-color: rgba(167,139,250,.2); }
+.ios-option-btn.blue { border-color: rgba(124,58,237,.2); }
+.ios-option-icon { width: 2.75rem; height: 2.75rem; border-radius: 14px; background: rgba(255,255,255,.03); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
+.ios-option-title { font-size: .9rem; font-weight: 700; }
+.ios-chevron { color: var(--text3); font-size: 1.2rem; margin-left: auto; }
+.ios-context-bar { display: flex; align-items: center; gap: .75rem; background: rgba(255,255,255,.02); border-radius: 12px; padding: .6rem .85rem; font-size: 1.3rem; }
+.ios-input { width: 100%; background: rgba(255,255,255,.03); border: .5px solid rgba(255,255,255,.06); border-radius: 12px; padding: .7rem .85rem; color: #fff; font-size: .85rem; outline: none; transition: border-color .2s, box-shadow .2s; font-family: inherit; }
+.ios-input:focus { border-color: var(--blue); box-shadow: 0 0 12px rgba(124,58,237,.12); }
+.ios-input::placeholder { color: var(--text3); }
+.ios-input-group { position: relative; }
+.ios-input-prefix { position: absolute; left: .85rem; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: .85rem; font-weight: 700; }
+.ios-input-big { width: 100%; background: rgba(255,255,255,.03); border: .5px solid rgba(255,255,255,.06); border-radius: 14px; padding: 1rem 1rem 1rem 2.75rem; color: #fff; font-size: 1.5rem; font-weight: 800; text-align: center; outline: none; transition: border-color .2s, box-shadow .2s; font-family: inherit; font-variant-numeric: tabular-nums; }
+.ios-input-big:focus { border-color: var(--blue); box-shadow: 0 0 16px rgba(124,58,237,.15); }
+.ios-input-big::placeholder { color: rgba(255,255,255,.08); }
+.ios-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.ios-chips.wrap { flex-wrap: wrap; }
+.ios-chip { padding: .4rem .75rem; border-radius: 99px; border: .5px solid rgba(255,255,255,.06); background: rgba(255,255,255,.03); color: var(--text2); font-size: .75rem; font-weight: 600; cursor: pointer; transition: all .2s; font-family: inherit; }
+.ios-chip:hover { background: rgba(255,255,255,.06); }
+.ios-chip.active { border-color: var(--neon); background: rgba(124,58,237,.1); color: var(--neon); }
+.ios-cat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; }
+.ios-cat-grid.compact { grid-template-columns: repeat(4, 1fr); }
+.ios-cat-btn { display: flex; flex-direction: column; align-items: center; gap: .25rem; padding: .6rem .25rem; border-radius: 12px; border: .5px solid rgba(255,255,255,.05); background: rgba(255,255,255,.02); cursor: pointer; transition: all .2s; color: var(--text2); font-family: inherit; }
+.ios-cat-btn:hover { background: rgba(255,255,255,.05); }
+.ios-cat-btn:active { transform: scale(.95); }
+.ios-cat-btn.active { border-color: var(--neon); background: rgba(124,58,237,.08); color: #fff; }
+.ios-cat-emoji { font-size: 1.3rem; }
+.ios-cat-btn span:last-child { font-size: .65rem; font-weight: 600; }
+.ios-btn-full { width: 100%; padding: .85rem; border-radius: 14px; border: none; color: #fff; font-size: .85rem; font-weight: 700; cursor: pointer; transition: all .2s; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: .5rem; }
+.ios-btn-full:hover { filter: brightness(1.1); box-shadow: 0 0 20px rgba(124,58,237,.2); }
+.ios-btn-full:active { transform: scale(.98); }
+.ios-btn-full:disabled { opacity: .5; cursor: not-allowed; }
+.ios-btn-secondary { flex: 1; padding: .75rem; border-radius: 14px; border: none; background: var(--surface2); color: var(--text2); font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .2s; font-family: inherit; }
+.ios-btn-secondary:hover { background: var(--surface3); }
+.ios-btn-row { display: flex; gap: .5rem; margin-top: .5rem; }
+.ios-label { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text3); }
+.ios-bank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; margin-bottom: .5rem; }
+.ios-color-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+.ios-color-dot { width: 2.25rem; height: 2.25rem; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all .2s; }
+.ios-color-dot:hover { transform: scale(1.15); }
+.ios-color-dot.active { border-color: #fff; transform: scale(1.15); box-shadow: 0 0 16px rgba(124,58,237,.3); }
+.ios-divider { border: none; border-top: .5px solid rgba(139,120,255,.06); margin: .5rem 0; }
+.ios-inline-form { display: flex; gap: .5rem; align-items: stretch; }
+.ios-inline-form .ios-input-big { padding-left: .75rem; text-align: left; }
+.ios-search-wrap { position: relative; display: flex; align-items: center; gap: .5rem; }
+.ios-search-wrap > span { position: absolute; left: .75rem; font-size: .85rem; }
+.ios-search-wrap .ios-input { padding-left: 2rem; }
+.ios-search-wrap .ios-spinner { position: absolute; right: .75rem; }
+.ios-user-list { display: flex; flex-direction: column; gap: .35rem; max-height: 40vh; overflow-y: auto; }
+.ios-user-avatar { width: 2.25rem; height: 2.25rem; border-radius: 50%; background: rgba(124,58,237,.08); display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; color: var(--neon); flex-shrink: 0; }
+.ios-loading-inline { display: flex; align-items: center; justify-content: center; gap: .75rem; padding: 2rem; color: var(--text3); font-size: .85rem; }
+.ios-alert-row { display: flex; align-items: center; gap: .65rem; background: rgba(255,255,255,.02); border: .5px solid rgba(255,255,255,.04); border-radius: 12px; padding: .65rem .75rem; }
+.ios-alert-row-icon { width: 2rem; height: 2rem; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: .85rem; flex-shrink: 0; }
+.ios-alert-row-body { flex: 1; min-width: 0; }
+.ios-alert-row-top { display: flex; justify-content: space-between; align-items: center; font-size: .8rem; font-weight: 600; margin-bottom: .3rem; }
+
+/* Finora Floating Button (Android 17 Style) */
+.android-17-gemini-btn { position: fixed; bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 4rem); left: 50%; transform: translateX(-50%); z-index: 45; background: rgba(20,18,32, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(192,132,252,.4); border-radius: 99px; padding: .65rem 1.5rem; display: flex; align-items: center; gap: .6rem; color: #fff; font-weight: 600; font-size: .9rem; box-shadow: 0 4px 24px rgba(124,58,237,.3), inset 0 0 12px rgba(192,132,252,.1); cursor: pointer; transition: all .3s cubic-bezier(.2,1,.3,1); font-family: inherit; }
+@media(min-width:1024px) { .android-17-gemini-btn { bottom: 2rem; } }
+.android-17-gemini-btn::before { content: ''; position: absolute; inset: -1px; border-radius: 99px; background: linear-gradient(90deg, #7c3aed, #e879f9, #7c3aed, #a78bfa, #7c3aed); background-size: 200% auto; z-index: -1; animation: borderGlowAnim 3s linear infinite; opacity: 0.6; transition: opacity .3s; }
+.android-17-gemini-btn:hover { transform: translateX(-50%) scale(1.05); box-shadow: 0 8px 32px rgba(124,58,237,.5), inset 0 0 16px rgba(192,132,252,.3); }
+.android-17-gemini-btn:hover::before { opacity: 1; }
+.android-17-gemini-btn:active { transform: translateX(-50%) scale(0.95); }
+@keyframes borderGlowAnim { to { background-position: 200% center; } }
+.gemini-icon { filter: drop-shadow(0 0 8px rgba(232,121,249,0.8)); }
+
+/* Finora Chat Modal */
+.finora-chat-bg { background: rgba(0,0,0,.75); z-index: 10000; }
+.finora-chat-wrapper { position: relative; width: 100%; max-width: 26rem; margin: auto; padding: 1.5px; border-radius: calc(var(--r-lg) + 1.5px); overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.8); }
+.finora-chat-rainbow-border { position: absolute; inset: -50%; background: conic-gradient(from 0deg, transparent 0%, rgba(124,58,237,0.8) 20%, rgba(232,121,249,0.8) 40%, rgba(52,211,153,0.8) 60%, rgba(124,58,237,0.8) 80%, transparent 100%); animation: spinRainbow 4s linear infinite; z-index: 0; }
+@keyframes spinRainbow { to { transform: rotate(360deg); } }
+.finora-chat-card { position: relative; z-index: 1; background: #160e26; border: 1px solid rgba(255,255,255,.05); border-radius: calc(var(--r-lg) - 1px); display: flex; flex-direction: column; height: 75vh; max-height: 650px; }
+.ios-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.25rem 0; border-bottom: 1px solid rgba(255,255,255,.03); padding-bottom: 1rem; }
+.finora-chat-body { flex: 1; overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.1) transparent; }
+.finora-chat-body::-webkit-scrollbar { width: 4px; }
+.finora-chat-body::-webkit-scrollbar-track { background: transparent; }
+.finora-chat-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 10px; }
+.finora-chat-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
+.finora-chat-footer { padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.05); display: flex; gap: .5rem; background: rgba(0,0,0,.2); border-radius: 0 0 var(--r-lg) var(--r-lg); }
+.finora-msg { display: flex; width: 100%; }
+.finora-msg.user { justify-content: flex-end; }
+.finora-msg.bot { justify-content: flex-start; }
+.msg-bubble { max-width: 85%; padding: .75rem 1rem; font-size: .85rem; line-height: 1.4; border-radius: 18px; white-space: pre-wrap; }
+.finora-msg.user .msg-bubble { background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; border-bottom-right-radius: 4px; box-shadow: 0 4px 12px rgba(124,58,237,.3); }
+.finora-msg.bot .msg-bubble { background: rgba(255,255,255,.06); color: var(--text2); border-bottom-left-radius: 4px; border: 1px solid rgba(255,255,255,.05); }
+.finora-msg.bot .msg-bubble :deep(strong) { font-weight: 800; color: #fff; }
+.finora-msg.bot .msg-bubble :deep(em) { font-style: italic; color: rgba(255,255,255,.8); }
+.finora-typing { display: flex; gap: 4px; padding: 4px 2px; align-items: center; justify-content: center; height: 1.25rem; }
+.finora-typing span { width: 6px; height: 6px; background: rgba(255,255,255,.5); border-radius: 50%; animation: finoraTyping 1.4s infinite ease-in-out both; }
+.finora-typing span:nth-child(1) { animation-delay: -0.32s; }
+.finora-typing span:nth-child(2) { animation-delay: -0.16s; }
+@keyframes finoraTyping { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+/* Transitions */
+.ios-modal-enter-active { transition: all .35s cubic-bezier(.2,1,.3,1); }
+.ios-modal-leave-active { transition: all .25s ease; }
+.ios-modal-enter-from, .ios-modal-leave-to { opacity: 0; }
+.ios-modal-enter-from .ios-modal-card { transform: translateY(30px) scale(.97); }
+.ios-modal-leave-to .ios-modal-card { transform: translateY(10px) scale(.99); }
+.ios-step-enter-active, .ios-step-leave-active { transition: all .2s ease; }
+.ios-step-enter-from { opacity: 0; transform: translateX(12px); }
+.ios-step-leave-to { opacity: 0; transform: translateX(-12px); }
 .fade-enter-active, .fade-leave-active { transition: opacity .25s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-
-.toast-enter-active, .toast-leave-active { transition: opacity .3s, transform .3s; }
-.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(12px); }
-
-.diff-badge-enter-active { transition: opacity .4s, transform .4s cubic-bezier(.16,1,.3,1); }
-.diff-badge-leave-active { transition: opacity .6s, transform .6s; }
-.diff-badge-enter-from { opacity: 0; transform: translateY(8px) scale(.8); }
-.diff-badge-leave-to { opacity: 0; transform: translateY(-12px) scale(.9); }
-
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-
-.fade-loading-leave-active { transition: opacity 0.5s ease, transform 0.5s ease; }
-.fade-loading-leave-to     { opacity: 0; transform: scale(1.04); }
-
-/* Loading global */
-@keyframes vf-spin  { to { transform: rotate(360deg); } }
-@keyframes vf-bounce { 0%,80%,100% { transform:translateY(0); } 40% { transform:translateY(-8px); } }
-.vf-spin  { animation: vf-spin 0.8s linear infinite; }
-.vf-dot   { width:8px; height:8px; border-radius:50%; background:#14b8a6; animation: vf-bounce 1.2s ease-in-out infinite; }
-.vf-loading-enter-active { transition: opacity 0.15s ease; }
-.vf-loading-leave-active { transition: opacity 0.4s ease; }
-.vf-loading-enter-from,
-.vf-loading-leave-to     { opacity: 0; }
-
-/* ── Novos transitions ── */
-.modal-slide-enter-active,
-.modal-slide-leave-active { transition: all 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
-.modal-slide-enter-from,
-.modal-slide-leave-to    { opacity: 0; transform: translateY(40px); }
-.step-fade-enter-active,
-.step-fade-leave-active { transition: all 0.18s ease; }
-.step-fade-enter-from,
-.step-fade-leave-to     { opacity: 0; transform: translateX(10px); }
-.toast-slide-enter-active,
-.toast-slide-leave-active { transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
-.toast-slide-enter-from   { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-.toast-slide-leave-to     { opacity: 0; transform: translateX(-50%) translateY(-8px); }
 </style>

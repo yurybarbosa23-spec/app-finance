@@ -1,0 +1,204 @@
+const fs = require('fs')
+const file = 'src/views/Dashboardview.vue'
+let content = fs.readFileSync(file, 'utf8')
+const lines = content.split('\n')
+// Keep lines 1-891 (script + blank), replace 892 onwards
+const scriptPart = lines.slice(0, 891).join('\n')
+
+const newTemplate = `
+<template>
+<div v-if="appCarregando" class="ios-splash"><div class="ios-splash-inner"><div class="ios-spinner"></div><p style="color:rgba(235,235,245,.6);font-size:.875rem;margin-top:1rem">Carregando...</p></div></div>
+<Transition name="ios-toast"><div v-if="toast.visivel" class="ios-toast">{{ toast.mensagem }}</div></Transition>
+<Transition name="fade"><div v-if="loadingGlobal" class="ios-overlay"><div class="ios-loading-card"><div class="ios-spinner"></div><span>{{ loadingMsg }}</span></div></div></Transition>
+
+<div class="ios-app" :style="globalGlow()">
+<header class="ios-header">
+  <div class="ios-header-left">
+    <div class="ios-logo">\u{1F4B0}</div>
+    <span class="ios-header-title" style="font-weight: 800; font-size: 1.1rem; margin-left: 0.5rem; display: none;">FinanceApp</span>
+  </div>
+
+  <nav class="ios-header-nav">
+    <button v-for="item in navItems" :key="item.val" @click.prevent="aba=item.val" :class="{active:aba===item.val}" class="ios-header-tab">
+      <span style="margin-right: 0.4rem;">{{ item.icon }}</span>{{ item.label }}
+    </button>
+  </nav>
+
+  <div class="ios-header-right">
+    <div class="ios-user-badge">
+      <div class="ios-avatar">{{ auth.nome?.charAt(0).toUpperCase() }}</div>
+      <span class="ios-greeting" style="display: none;">Olá, <strong>{{ auth.nome?.split(' ')[0] }}</strong></span>
+    </div>
+    <button @click="modalAlertas=true" class="ios-hdr-btn">\u{1F514}</button>
+    <button @click="auth.logout()" class="ios-hdr-btn ios-hdr-btn-danger">\u2715</button>
+  </div>
+</header>
+
+<main class="ios-main">
+<div v-show="aba==='inicio'" class="ios-content">
+
+  <div class="ios-balance-card" :style="tilt(5)">
+    <div class="ios-balance-glow" :style="glow()"></div>
+    <div class="ios-balance-inner">
+      <div class="ios-balance-top">
+        <div><p class="ios-balance-label">Saldo Total</p><p class="ios-balance-sub">{{ accounts.contas.length }} conta(s)</p></div>
+        <div class="ios-balance-badge">\u{1F4C5} {{ mesAtual }}</div>
+      </div>
+      <h2 class="ios-balance-value" :class="{up:saldoAnimando==='up',down:saldoAnimando==='down'}">{{ formatar(saldoExibido) }}</h2>
+      <Transition name="ios-diff"><div v-if="diffVisivel" class="ios-balance-diff" :class="diffValor>=0?'pos':'neg'">{{ diffValor>=0?'+':'' }}{{ formatar(diffValor) }}</div></Transition>
+      <div class="ios-balance-bar"><div class="ios-balance-bar-fill" :class="pctEntradas>50?'good':'warn'" :style="{width:pctEntradas+'%'}"></div></div>
+      <div class="ios-balance-row"><span>\u2B06 {{ formatar(totalEntradas) }}</span><span>\u2B07 {{ formatar(totalSaidas) }}</span></div>
+    </div>
+  </div>
+
+  <div class="ios-quick-grid">
+    <button @click="modalLancamento=true;passoLancamento=1" class="ios-quick-btn"><span class="ios-quick-icon qb-green">\u26A1</span><span>Lan\u00E7ar</span></button>
+    <button @click="abrirTransferenciaStep()" class="ios-quick-btn"><span class="ios-quick-icon qb-blue">\u{1F504}</span><span>Transferir</span></button>
+    <button @click="modalAlertas=true" class="ios-quick-btn"><span class="ios-quick-icon qb-orange">\u{1F514}</span><span>Alertas</span></button>
+    <button @click="modalConta=true" class="ios-quick-btn"><span class="ios-quick-icon qb-purple">\u{1F3E6}</span><span>Conta</span></button>
+  </div>
+
+  <div class="ios-summary-grid">
+    <div class="ios-widget" @click="aba='historico';filtroAtivo='receita'" :style="tilt(3)">
+      <div class="ios-widget-icon wg-green">\u2B06\uFE0F</div><p class="ios-widget-label">Entradas</p><p class="ios-widget-value wg-green-text">{{ formatar(totalEntradas) }}</p>
+    </div>
+    <div class="ios-widget" @click="aba='historico';filtroAtivo='despesa'" :style="tilt(3)">
+      <div class="ios-widget-icon wg-red">\u2B07\uFE0F</div><p class="ios-widget-label">Sa\u00EDdas</p><p class="ios-widget-value wg-red-text">{{ formatar(totalSaidas) }}</p>
+    </div>
+    <div class="ios-widget" :style="tilt(3)">
+      <div class="ios-widget-icon" :class="balanco>=0?'wg-teal':'wg-red'">\u2696\uFE0F</div><p class="ios-widget-label">Balan\u00E7o</p><p class="ios-widget-value" :class="balanco>=0?'wg-teal-text':'wg-red-text'">{{ formatar(balanco) }}</p>
+    </div>
+  </div>
+
+  <div v-if="accounts.contas.length" class="ios-widget-card" :style="tilt(2)">
+    <div class="ios-wc-header"><p>\u{1F3E6} Minhas Contas</p><button @click="aba='contas'" class="ios-link">Ver todas \u2192</button></div>
+    <div v-for="conta in accounts.contas" :key="conta.id" class="ios-account-row">
+      <div class="ios-acc-icon" :style="{background:conta.cor+'18',color:conta.cor}">{{ conta.banco.charAt(0).toUpperCase() }}</div>
+      <div class="ios-acc-info"><p class="ios-acc-name">{{ conta.banco }}</p><div class="ios-acc-bar"><div :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div></div></div>
+      <p class="ios-acc-val" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
+    </div>
+  </div>
+  <div v-else class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">\u{1F3E6}</p><p>Nenhuma conta ainda</p><button @click="modalConta=true" class="ios-link">+ Adicionar conta</button></div>
+
+  <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual>=b.limite)" :key="'al-'+b.id" class="ios-alert-card ios-alert-danger">
+    <div class="ios-alert-icon">{{ emojiCat[b.categoria]||'\u26A0\uFE0F' }}</div>
+    <div class="ios-alert-body"><p class="ios-alert-title">\u{1F6A8} Limite ultrapassado!</p><p class="ios-alert-sub">{{ labelCat[b.categoria] }}: <strong>{{ formatar(b.gastoAtual) }}</strong> de {{ formatar(b.limite) }}</p>
+      <div class="ios-alert-bar"><div :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}" class="bg-red"></div></div></div>
+  </div>
+  <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual>=b.limite*0.7 && b.gastoAtual<b.limite)" :key="'av-'+b.id" class="ios-alert-card ios-alert-warn">
+    <div class="ios-alert-icon">{{ emojiCat[b.categoria]||'\u26A0\uFE0F' }}</div>
+    <div class="ios-alert-body"><p class="ios-alert-title">\u26A0\uFE0F Aten\u00E7\u00E3o!</p><p class="ios-alert-sub">{{ labelCat[b.categoria] }}: <strong>{{ formatar(b.gastoAtual) }}</strong> de {{ formatar(b.limite) }} ({{ Math.round((b.gastoAtual/b.limite)*100) }}%)</p>
+      <div class="ios-alert-bar"><div :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}" class="bg-amber"></div></div></div>
+  </div>
+
+  <div v-if="items.itens.filter(i=>i.status==='disponivel').length" class="ios-widget-card">
+    <div class="ios-wc-header"><p>\u{1F4E6} \u00C0 venda</p><button @click="aba='investimentos'" class="ios-link">Ver tudo \u2192</button></div>
+    <div v-for="item in items.itens.filter(i=>i.status==='disponivel').slice(0,3)" :key="item.id" class="ios-account-row">
+      <span style="font-size:1.2rem">\u{1F4E6}</span>
+      <p style="flex:1;font-size:.875rem;font-weight:500">{{ item.nome }}</p>
+      <p class="wg-orange-text" style="font-weight:800;font-size:.875rem">{{ formatar(item.valor) }}</p>
+      <button @click="abrirVenda(item)" class="ios-pill-btn">Vender</button>
+    </div>
+  </div>
+</div>
+
+<div v-show="aba==='contas'" class="ios-content">
+  <div class="ios-section-header"><p class="ios-section-title">\u{1F3E6} Contas</p>
+    <div style="display:flex;gap:.5rem"><button @click="abrirTransferenciaStep()" class="ios-pill-btn blue">\u{1F504} Transferir</button><button @click="modalConta=true" class="ios-pill-btn green">+ Nova</button></div>
+  </div>
+  <div v-if="accounts.contas.length" class="ios-total-banner"><p>Total consolidado</p><p class="ios-total-val">{{ formatar(accounts.saldoTotal) }}</p></div>
+  <div class="ios-cards-grid">
+    <div v-for="conta in accounts.contas" :key="conta.id" class="ios-conta-card" :style="tilt(3)">
+      <div class="ios-conta-top-bar" :style="{backgroundColor:conta.cor}"></div>
+      <div class="ios-conta-header">
+        <div class="ios-acc-icon lg" :style="{background:conta.cor+'18',color:conta.cor}">{{ conta.banco.charAt(0).toUpperCase() }}</div>
+        <div><p style="font-weight:700;font-size:.9rem">{{ conta.banco }}</p><p class="ios-muted">Conta banc\u00E1ria</p></div>
+        <button @click="confirmarDel(conta)" class="ios-del-btn">\u2715</button>
+      </div>
+      <p class="ios-conta-saldo" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
+      <div class="ios-conta-footer"><span>Participa\u00E7\u00E3o</span><span>{{ accounts.saldoTotal>0?Math.round((conta.saldo/accounts.saldoTotal)*100):0 }}%</span></div>
+      <div class="ios-acc-bar full"><div :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div></div>
+    </div>
+  </div>
+  <div v-if="!accounts.contas.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">\u{1F3E6}</p><p>Nenhuma conta.</p><button @click="modalConta=true" class="ios-link">Adicionar \u2192</button></div>
+</div>
+
+<div v-show="aba==='historico'" class="ios-content">
+  <div class="ios-segmented"><button @click="subAbaHistorico='lancamentos'" :class="{active:subAbaHistorico==='lancamentos'}">\u{1F4CB} Lan\u00E7amentos</button><button @click="subAbaHistorico='metricas'" :class="{active:subAbaHistorico==='metricas'}">\u{1F4CA} M\u00E9tricas</button></div>
+  <div v-show="subAbaHistorico==='lancamentos'">
+    <div class="ios-segmented sm"><button v-for="f in filtros" :key="f.val" @click="filtroAtivo=f.val" :class="{active:filtroAtivo===f.val}">{{ f.label }}</button></div>
+    <div class="ios-list-header"><span>{{ filtroAtivo==='todos'?'Todas':filtroAtivo==='receita'?'Entradas':'Sa\u00EDdas' }} ({{ transacoesFiltradas.length }})</span><span class="ios-list-total" :class="filtroAtivo==='despesa'?'wg-red-text':filtroAtivo==='receita'?'wg-green-text':'wg-teal-text'">{{ filtroAtivo==='todos'?formatar(balanco):filtroAtivo==='receita'?formatar(totalEntradas):formatar(totalSaidas) }}</span></div>
+    <div v-if="!transacoesFiltradas.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">\u{1F4ED}</p><p>Nenhum lan\u00E7amento</p><button @click="modalLancamento=true" class="ios-link">+ Criar</button></div>
+    <div class="ios-widget-card">
+      <div v-for="(t,i) in transacoesFiltradas" :key="t.id" class="ios-tx-row" :class="{bordered:i>0}">
+        <div class="ios-tx-icon" :class="t.tipo==='receita'?'wg-green':'wg-red'">{{ emojiCat[t.categoria]||(t.tipo==='receita'?'\u{1F49A}':'\u{1F534}') }}</div>
+        <div class="ios-tx-info"><p class="ios-tx-desc">{{ t.descricao }}</p><p class="ios-muted">{{ t.Account?.banco||t.Account?.nome }} \u2022 {{ fmtData(t.data) }}</p></div>
+        <div class="ios-tx-right">
+          <p :class="t.tipo==='receita'?'wg-green-text':'wg-red-text'" style="font-weight:800;font-size:.875rem">{{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}</p>
+          <div class="ios-tx-actions"><button @click="abrirEditar(t)" class="ios-sm-btn">\u270F\uFE0F</button><button @click="tx.deletar(t.id).then(()=>mostrarToast('\u{1F5D1}\uFE0F Removido'))" class="ios-sm-btn danger">\u2715</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div v-show="subAbaHistorico==='metricas'" class="ios-metrics-section">
+    <div class="ios-segmented sm"><button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val" :class="{active:periodoMetricas===p.val}">{{ p.label }}</button></div>
+    <p class="ios-period-label">{{ labelPeriodo }}</p>
+    <div class="ios-summary-grid">
+      <div class="ios-widget"><div class="ios-widget-icon wg-red">\u2B07\uFE0F</div><p class="ios-widget-label">Gasto</p><p class="ios-widget-value wg-red-text">{{ formatar(totalGastoPeriodo) }}</p></div>
+      <div class="ios-widget"><div class="ios-widget-icon wg-green">\u2B06\uFE0F</div><p class="ios-widget-label">Recebido</p><p class="ios-widget-value wg-green-text">{{ formatar(totalRecebPeriodo) }}</p></div>
+      <div class="ios-widget"><div class="ios-widget-icon wg-purple">\u{1F4B9}</div><p class="ios-widget-label">Economia</p><p class="ios-widget-value wg-purple-text">{{ taxaEconomia }}%</p></div>
+    </div>
+    <div v-if="gastosPorCat.length" class="ios-widget-card">
+      <p class="ios-wc-title">\u2B07\uFE0F Gastos por categoria</p>
+      <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="14"/><circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="14" :stroke-dasharray="(seg.dash-2)+' '+(CIRCUMFERENCE-seg.dash+2)" :stroke-dashoffset="-(seg.offset)" style="transition:all .6s ease"/></svg><div class="ios-donut-center"><p class="ios-muted">Total</p><p style="font-weight:800;font-size:.75rem">{{ formatar(totalGastoPeriodo) }}</p></div></div>
+        <div class="ios-donut-legend"><div v-for="item in gastosPorCat.slice(0,5)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct" :style="{color:item.cor}">{{ item.pct }}%</span></div></div>
+      </div>
+      <div class="ios-cat-bars"><div v-for="item in gastosPorCat" :key="item.cat" class="ios-cat-bar-item"><div class="ios-cat-bar-header"><span>{{ item.emoji }} {{ item.label }}</span><span class="ios-muted">{{ formatar(item.valor) }} \u00B7 <strong :style="{color:item.cor}">{{ item.pct }}%</strong></span></div><div class="ios-progress"><div :style="{width:item.pct+'%',background:item.cor}"></div></div></div></div>
+    </div>
+    <div v-if="receitasPorCat.length" class="ios-widget-card">
+      <p class="ios-wc-title">\u2B06\uFE0F Receitas por categoria</p>
+      <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="14"/><circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="14" :stroke-dasharray="(seg.dash-2)+' '+(CIRCUMFERENCE-seg.dash+2)" :stroke-dashoffset="-(seg.offset)" style="transition:all .6s ease"/></svg><div class="ios-donut-center"><p class="ios-muted">Total</p><p style="font-weight:800;font-size:.75rem">{{ formatar(totalRecebPeriodo) }}</p></div></div>
+        <div class="ios-donut-legend"><div v-for="item in receitasPorCat.slice(0,5)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct" :style="{color:item.cor}">{{ item.pct }}%</span></div></div>
+      </div>
+    </div>
+    <div v-if="!txPeriodo.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">\u{1F4CA}</p><p>Sem dados neste per\u00EDodo</p></div>
+  </div>
+</div>
+
+<div v-show="aba==='metricas'" class="ios-content">
+  <div class="ios-segmented sm"><button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val" :class="{active:periodoMetricas===p.val}">{{ p.label }}</button></div>
+  <div class="ios-summary-grid">
+    <div class="ios-widget"><p class="ios-widget-label">Receitas</p><p class="ios-widget-value wg-green-text">{{ formatar(totalRecebPeriodo) }}</p></div>
+    <div class="ios-widget"><p class="ios-widget-label">Despesas</p><p class="ios-widget-value wg-red-text">{{ formatar(totalGastoPeriodo) }}</p></div>
+    <div class="ios-widget"><p class="ios-widget-label">Economia</p><p class="ios-widget-value wg-purple-text">{{ taxaEconomia }}%</p></div>
+  </div>
+  <div v-if="gastosPorCat.length" class="ios-widget-card">
+    <p class="ios-wc-title">Despesas por categoria</p>
+    <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" width="120" height="120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="18" :stroke-dasharray="seg.dash+' '+(CIRCUMFERENCE-seg.dash)" :stroke-dashoffset="CIRCUMFERENCE-seg.offset" style="transform:rotate(-90deg);transform-origin:60px 60px"/></svg></div>
+    <div class="ios-donut-legend"><div v-for="item in gastosPorCat.slice(0,4)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct">{{ item.pct }}%</span></div></div></div>
+    <div class="ios-cat-bars"><div v-for="item in gastosPorCat" :key="item.cat" class="ios-cat-bar-item"><div class="ios-cat-bar-header"><span>{{ item.emoji }} {{ item.label }}</span><span class="ios-muted">{{ formatar(item.valor) }} \u00B7 {{ item.pct }}%</span></div><div class="ios-progress"><div :style="{width:item.pct+'%',background:item.cor}"></div></div></div></div>
+  </div>
+  <div v-if="receitasPorCat.length" class="ios-widget-card">
+    <p class="ios-wc-title">Receitas por categoria</p>
+    <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" width="120" height="120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="18" :stroke-dasharray="seg.dash+' '+(CIRCUMFERENCE-seg.dash)" :stroke-dashoffset="CIRCUMFERENCE-seg.offset" style="transform:rotate(-90deg);transform-origin:60px 60px"/></svg></div>
+    <div class="ios-donut-legend"><div v-for="item in receitasPorCat.slice(0,4)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct">{{ item.pct }}%</span></div></div></div>
+  </div>
+  <div v-if="!txPeriodo.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">\u{1F4CA}</p><p>Nenhuma transa\u00E7\u00E3o neste per\u00EDodo</p></div>
+</div>
+
+<div v-show="aba==='investimentos'"></div>
+</main>
+
+<nav class="ios-bottomnav">
+  <div class="ios-bottomnav-inner">
+    <button @click="aba='inicio'" :class="{active:aba==='inicio'}" class="ios-tab-btn"><span class="ios-tab-icon">\u{1F3E0}</span><span class="ios-tab-label">In\u00EDcio</span></button>
+    <button @click="aba='contas'" :class="{active:aba==='contas'}" class="ios-tab-btn"><span class="ios-tab-icon">\u{1F3E6}</span><span class="ios-tab-label">Contas</span></button>
+    <button @click="modalLancamento=true;passoLancamento=1" class="ios-fab"><div class="ios-fab-inner">\u26A1</div><span class="ios-tab-label active">Lan\u00E7ar</span></button>
+    <button @click="aba='historico'" :class="{active:aba==='historico'}" class="ios-tab-btn"><span class="ios-tab-icon">\u{1F4CB}</span><span class="ios-tab-label">Hist\u00F3rico</span></button>
+    <button @click="aba='metricas'" :class="{active:aba==='metricas'}" class="ios-tab-btn"><span class="ios-tab-icon">\u{1F4CA}</span><span class="ios-tab-label">M\u00E9tricas</span></button>
+  </div>
+</nav>
+`
+
+fs.writeFileSync('src/views/_tmpl.txt', newTemplate, 'utf8')
+console.log('Template written:', newTemplate.length, 'chars')

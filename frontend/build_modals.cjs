@@ -1,0 +1,186 @@
+const fs = require('fs')
+
+const modals = `
+<!-- MODAL LAN\u00C7AMENTO -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalLancamento" class="ios-modal-bg" @click.self="fecharLancamentoStep">
+<div class="ios-modal-card">
+  <div class="ios-modal-header">
+    <button v-if="passoLancamento>1" @click="passoLancamento--" class="ios-back">\u2039</button>
+    <div><h3>\u26A1 Lan\u00E7amento R\u00E1pido</h3><p class="ios-muted">Passo {{ passoLancamento }} de {{ accounts.contas.length>1?4:3 }}</p></div>
+    <button @click="fecharLancamentoStep" class="ios-close">\u2715</button>
+  </div>
+  <div class="ios-modal-progress"><div :class="formTx.tipo==='receita'?'bg-green':'bg-red'" :style="{width:(passoLancamento/(accounts.contas.length>1?4:3)*100)+'%'}"></div></div>
+  <div class="ios-modal-body">
+    <Transition name="ios-step" mode="out-in">
+    <div v-if="passoLancamento===1" key="p1" class="ios-step">
+      <p class="ios-step-title">O que deseja registrar?</p>
+      <button @click="selecionarTipoLancamento('receita')" class="ios-option-btn green"><div class="ios-option-icon">\u2B06\uFE0F</div><div><p class="ios-option-title">Entrada</p><p class="ios-muted">Sal\u00E1rio, freelance, presente...</p></div><span class="ios-chevron">\u203A</span></button>
+      <button @click="selecionarTipoLancamento('despesa')" class="ios-option-btn red"><div class="ios-option-icon">\u2B07\uFE0F</div><div><p class="ios-option-title">Sa\u00EDda</p><p class="ios-muted">Mercado, contas, lazer...</p></div><span class="ios-chevron">\u203A</span></button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in">
+    <div v-if="passoLancamento===2" key="p2" class="ios-step">
+      <p class="ios-step-title">{{ formTx.tipo==='receita'?'Categoria da entrada':'Categoria da sa\u00EDda' }}</p>
+      <div class="ios-cat-grid"><button v-for="cat in categoriasAtuais" :key="cat.id" @click="selecionarCategoriaStep(cat.id)" :class="{active:formTx.categoria===cat.id}" class="ios-cat-btn"><span class="ios-cat-emoji">{{ cat.emoji }}</span><span>{{ cat.label }}</span></button></div>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in">
+    <div v-if="passoLancamento===3" key="p3" class="ios-step">
+      <div class="ios-context-bar"><span>{{ emojiCat[formTx.categoria] }}</span><div><p class="ios-muted">{{ labelCat[formTx.categoria] }}</p><p :class="formTx.tipo==='receita'?'wg-green-text':'wg-red-text'" style="font-size:.7rem">{{ formTx.tipo==='receita'?'\u2B06\uFE0F Entrada':'\u2B07\uFE0F Sa\u00EDda' }}</p></div></div>
+      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValor" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
+      <div class="ios-chips"><button v-for="v in valoresRapidos.slice(4)" :key="v.val" @click="setValorRapido(v.val)" class="ios-chip">{{ v.label }}</button></div>
+      <input v-model="formTx.descricao" type="text" placeholder="Descri\u00E7\u00E3o (opcional)" class="ios-input"/>
+      <button @click="confirmarValorLancamento" :class="formTx.tipo==='receita'?'bg-green':'bg-red'" class="ios-btn-full">{{ accounts.contas.length>1?'Pr\u00F3ximo \u2192 Conta':'Confirmar \u2713' }}</button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in">
+    <div v-if="passoLancamento===4" key="p4" class="ios-step">
+      <p class="ios-step-title">Qual conta?</p>
+      <button v-for="c in accounts.contas" :key="c.id" @click="formTx.accountId=c.id;criarTransacaoStep()" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0).toUpperCase() }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><span class="ios-chevron">\u203A</span></button>
+    </div></Transition>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL TRANSFER\u00CANCIA -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalTransferencia" class="ios-modal-bg" @click.self="fecharTransferenciaStep">
+<div class="ios-modal-card">
+  <div class="ios-modal-header">
+    <button v-if="passoTransf>1" @click="passoTransf--;buscaUsuario='';usuariosEncontrados=[]" class="ios-back">\u2039</button>
+    <div><h3>\u{1F504} Transfer\u00EAncia</h3><p class="ios-muted">Passo {{ passoTransf }} de {{ formTransf.tipo==='propria'?4:5 }}</p></div>
+    <button @click="fecharTransferenciaStep" class="ios-close">\u2715</button>
+  </div>
+  <div class="ios-modal-progress"><div class="bg-blue" :style="{width:(passoTransf/(formTransf.tipo==='propria'?4:5)*100)+'%'}"></div></div>
+  <div class="ios-modal-body">
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===1" key="t1" class="ios-step">
+      <p class="ios-step-title">Para onde?</p>
+      <button @click="selecionarTipoTransf('propria')" :disabled="accounts.contas.length<2" class="ios-option-btn teal"><div class="ios-option-icon">\u{1F504}</div><div><p class="ios-option-title">Minha conta</p><p class="ios-muted">Entre suas contas</p></div><span class="ios-chevron">\u203A</span></button>
+      <button @click="selecionarTipoTransf('externo')" class="ios-option-btn blue"><div class="ios-option-icon">\u{1F464}</div><div><p class="ios-option-title">Outro usu\u00E1rio</p><p class="ios-muted">Enviar para outra pessoa</p></div><span class="ios-chevron">\u203A</span></button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===2&&formTransf.tipo==='propria'" key="t2p" class="ios-step">
+      <p class="ios-step-title">Conta destino</p>
+      <button v-for="c in accounts.contas" :key="c.id" @click="selecionarContaDestinoStep(c.id)" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><span class="ios-chevron">\u203A</span></button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===2&&formTransf.tipo==='externo'" key="t2e" class="ios-step">
+      <p class="ios-step-title">Destinat\u00E1rio</p>
+      <div class="ios-search-wrap"><span>\u{1F50D}</span><input v-model="buscaUsuario" @input="debounceUsuarios" placeholder="Buscar nome ou e-mail..." class="ios-input"/><div v-if="buscandoUsuarios" class="ios-spinner sm"></div></div>
+      <div class="ios-user-list">
+        <button v-for="u in usuariosDestino" :key="u.id" @click="selecionarUsuarioStep(u)" class="ios-option-btn" :class="{selected:formTransf.usuarioDestinoId===u.id}"><div class="ios-user-avatar">{{ u.nome.charAt(0).toUpperCase() }}</div><div><p class="ios-option-title">{{ u.nome }}</p><p class="ios-muted">{{ u.email }}</p></div><span v-if="formTransf.usuarioDestinoId===u.id" class="wg-blue-text">\u2713</span><span v-else class="ios-chevron">\u203A</span></button>
+        <p v-if="buscaUsuario.length>=2&&!buscandoUsuarios&&!usuariosDestino.length" class="ios-empty-small">Nenhum usu\u00E1rio encontrado</p>
+      </div>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===3&&formTransf.tipo==='propria'" key="t3p" class="ios-step">
+      <p class="ios-step-title">Valor</p>
+      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValorTransf" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
+      <div class="ios-chips"><button v-for="v in valoresRapidosTransf" :key="v.val" @click="setValorRapidoTransf(v.val)" class="ios-chip">{{ v.label }}</button></div>
+      <button @click="confirmarValorTransf" class="ios-btn-full bg-blue">Pr\u00F3ximo \u2192</button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===3&&formTransf.tipo==='externo'" key="t3e" class="ios-step">
+      <p class="ios-step-title">Conta do destinat\u00E1rio</p>
+      <button v-for="c in contasUsuarioDestino" :key="c.id" @click="selecionarContaExternaStep(c.id)" class="ios-option-btn" :class="{selected:formTransf.contaExternaId===c.id}"><div class="ios-acc-icon" style="background:rgba(59,130,246,.12);color:#3b82f6">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ c.nome }}</p></div><span class="ios-chevron">\u203A</span></button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===4&&formTransf.tipo==='externo'" key="t4e" class="ios-step">
+      <p class="ios-step-title">Valor</p>
+      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValorTransf" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
+      <input v-model="formTransf.descricao" type="text" placeholder="Descri\u00E7\u00E3o (opcional)" class="ios-input"/>
+      <button @click="confirmarValorTransf" class="ios-btn-full bg-blue">Pr\u00F3ximo \u2192</button>
+    </div></Transition>
+    <Transition name="ios-step" mode="out-in"><div v-if="(passoTransf===4&&formTransf.tipo==='propria')||(passoTransf===5&&formTransf.tipo==='externo')" key="torigem" class="ios-step">
+      <p class="ios-step-title">De qual conta?</p>
+      <button v-for="c in contasOrigemTransf" :key="c.id" @click="formTransf.contaOrigemId=c.id;realizarTransferenciaStep()" :disabled="loadingTransferencia" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><div v-if="loadingTransferencia&&formTransf.contaOrigemId===c.id" class="ios-spinner sm"></div><span v-else class="ios-chevron">\u203A</span></button>
+    </div></Transition>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL CONTA -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalConta" class="ios-modal-bg" @click.self="modalConta=false">
+<div class="ios-modal-card sm">
+  <div class="ios-modal-header"><div><h3>\u{1F3E6} Nova Conta</h3></div><button @click="modalConta=false" class="ios-close">\u2715</button></div>
+  <div class="ios-modal-body">
+    <label class="ios-label">Banco</label>
+    <div class="ios-bank-grid"><button v-for="b in bancosRapidos" :key="b" @click="formConta.banco=b" :class="{active:formConta.banco===b}" class="ios-chip">{{ b }}</button></div>
+    <input v-model="formConta.banco" placeholder="Ou digite..." class="ios-input"/>
+    <label class="ios-label">Saldo atual</label>
+    <input ref="inputSaldo" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/>
+    <label class="ios-label">Cor</label>
+    <div class="ios-color-row"><button v-for="cor in cores" :key="cor" @click="formConta.cor=cor" :style="{backgroundColor:cor}" :class="{active:formConta.cor===cor}" class="ios-color-dot"/></div>
+    <div class="ios-btn-row"><button @click="modalConta=false" class="ios-btn-secondary">Cancelar</button><button @click="criarConta" :disabled="loadingConta" class="ios-btn-full bg-teal">{{ loadingConta?'Salvando...':'Salvar' }}</button></div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL ITEM -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalItem" class="ios-modal-bg" @click.self="modalItem=false">
+<div class="ios-modal-card sm">
+  <div class="ios-modal-header"><div><h3>{{ subAbaInv==='venda'?'\u{1F4E6} Item \u00E0 Venda':'\u{1F6D2} Compra' }}</h3></div><button @click="modalItem=false" class="ios-close">\u2715</button></div>
+  <div class="ios-modal-body">
+    <label class="ios-label">Nome</label><input v-model="formItem.nome" :placeholder="subAbaInv==='venda'?'Ex: Notebook...':'Ex: Teclado...'" class="ios-input"/>
+    <label class="ios-label">Descri\u00E7\u00E3o</label><input v-model="formItem.descricao" placeholder="Condi\u00E7\u00E3o, detalhes..." class="ios-input"/>
+    <label class="ios-label">{{ subAbaInv==='venda'?'Pre\u00E7o':'Valor pago' }}</label><input ref="inputValorItem" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/>
+    <div v-if="subAbaInv==='compra'"><label class="ios-label">Descontar de</label><div class="ios-chips"><button v-for="c in accounts.contas" :key="c.id" @click="formItem.accountId=c.id" :class="{active:formItem.accountId===c.id}" class="ios-chip">{{ c.banco }}</button></div></div>
+    <div class="ios-btn-row"><button @click="modalItem=false" class="ios-btn-secondary">Cancelar</button><button @click="criarItem" :class="subAbaInv==='venda'?'bg-orange':'bg-blue'" class="ios-btn-full">Salvar</button></div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL ALERTAS -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalAlertas" class="ios-modal-bg" @click.self="modalAlertas=false">
+<div class="ios-modal-card">
+  <div class="ios-modal-header"><div><h3>\u{1F514} Alertas de Or\u00E7amento</h3></div><button @click="modalAlertas=false" class="ios-close">\u2715</button></div>
+  <div class="ios-modal-body">
+    <label class="ios-label">Categoria</label>
+    <div class="ios-cat-grid compact"><button v-for="cat in categoriasSaida" :key="cat.id" @click="formAlerta.categoria=cat.id" :class="{active:formAlerta.categoria===cat.id}" class="ios-cat-btn"><span class="ios-cat-emoji">{{ cat.emoji }}</span><span>{{ cat.label }}</span></button></div>
+    <div class="ios-inline-form"><input ref="inputValorAlerta" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/><button @click="salvarAlerta" :disabled="loadingAlerta" class="ios-btn-full bg-orange" style="flex-shrink:0;width:auto;padding:0 1.5rem">{{ budgets.budgets.find(b=>b.categoria===formAlerta.categoria)?'Atualizar':'Criar' }}</button></div>
+    <hr class="ios-divider"/>
+    <label class="ios-label">Configurados ({{ budgets.budgets.length }})</label>
+    <div v-for="b in budgets.budgets" :key="b.id" class="ios-alert-row">
+      <div class="ios-alert-row-icon" :class="b.gastoAtual>=b.limite?'wg-red':b.gastoAtual>=b.limite*0.7?'wg-orange':'wg-teal'">{{ emojiCat[b.categoria]||'\u{1F4E6}' }}</div>
+      <div class="ios-alert-row-body"><div class="ios-alert-row-top"><span>{{ labelCat[b.categoria] }}</span><span :class="b.gastoAtual>=b.limite?'wg-red-text':'wg-teal-text'" style="font-weight:800;font-size:.75rem">{{ formatar(b.gastoAtual) }} / {{ formatar(b.limite) }}</span></div><div class="ios-progress sm"><div :class="b.gastoAtual>=b.limite?'bg-red':b.gastoAtual>=b.limite*0.7?'bg-amber':'bg-teal'" :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}"></div></div></div>
+      <button @click="toggleAlerta(b)" class="ios-sm-btn">{{ b.ativo?'\u{1F514}':'\u{1F515}' }}</button>
+      <button @click="budgets.deletar(b.id).then(()=>mostrarToast('\u{1F5D1}\uFE0F Removido'))" class="ios-sm-btn danger">\u2715</button>
+    </div>
+    <button @click="modalAlertas=false" class="ios-btn-secondary" style="width:100%;margin-top:1rem">Fechar</button>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL EDITAR -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalEditar" class="ios-modal-bg" @click.self="modalEditar=false">
+<div class="ios-modal-card">
+  <div class="ios-modal-header"><div><h3>\u270F\uFE0F Editar Transa\u00E7\u00E3o</h3></div><button @click="modalEditar=false" class="ios-close">\u2715</button></div>
+  <div class="ios-modal-body">
+    <div class="ios-segmented sm"><button @click="formEditar.tipo='receita';formEditar.categoria='salario'" :class="{active:formEditar.tipo==='receita'}">\u2B06\uFE0F Entrada</button><button @click="formEditar.tipo='despesa';formEditar.categoria='mercado'" :class="{active:formEditar.tipo==='despesa'}">\u2B07\uFE0F Sa\u00EDda</button></div>
+    <label class="ios-label">Categoria</label>
+    <div class="ios-cat-grid compact"><button v-for="cat in (formEditar.tipo==='receita'?categoriasEntrada:categoriasSaida)" :key="cat.id" @click="formEditar.categoria=cat.id" :class="{active:formEditar.categoria===cat.id}" class="ios-cat-btn"><span class="ios-cat-emoji">{{ cat.emoji }}</span><span>{{ cat.label }}</span></button></div>
+    <label class="ios-label">Conta</label>
+    <div class="ios-chips wrap"><button v-for="c in accounts.contas" :key="c.id" @click="formEditar.accountId=c.id" :class="{active:formEditar.accountId===c.id}" class="ios-chip">{{ c.banco }}</button></div>
+    <label class="ios-label">Valor</label><input ref="inputValorEditar" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big"/>
+    <label class="ios-label">Descri\u00E7\u00E3o</label><input v-model="formEditar.descricao" placeholder="Descri\u00E7\u00E3o..." class="ios-input"/>
+    <label class="ios-label">Data</label><input v-model="formEditar.data" type="date" class="ios-input"/>
+    <div class="ios-btn-row"><button @click="modalEditar=false" class="ios-btn-secondary">Cancelar</button><button @click="salvarEdicao" :disabled="loadingEditar" :class="formEditar.tipo==='receita'?'bg-green':'bg-teal'" class="ios-btn-full">{{ loadingEditar?'Salvando...':'\u2705 Salvar' }}</button></div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL CONFIRMAR DELETE -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="contaParaDel" class="ios-modal-bg" @click.self="contaParaDel=null">
+<div class="ios-modal-card sm" style="text-align:center">
+  <div class="ios-modal-body">
+    <p style="font-size:2.5rem;margin-bottom:.5rem">\u{1F5D1}\uFE0F</p>
+    <h3 style="margin-bottom:.25rem">Excluir {{ contaParaDel.banco }}?</h3>
+    <p class="ios-muted">Esta a\u00E7\u00E3o n\u00E3o pode ser desfeita.</p>
+    <div class="ios-btn-row" style="margin-top:1.5rem"><button @click="contaParaDel=null" class="ios-btn-secondary">Cancelar</button><button @click="deletarConta" class="ios-btn-full bg-red">Excluir</button></div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+</div>
+`
+
+fs.writeFileSync('src/views/_modals.txt', modals, 'utf8')
+console.log('Modals written:', modals.length, 'chars')
