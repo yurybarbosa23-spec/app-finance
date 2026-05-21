@@ -2,7 +2,7 @@
 const express        = require('express')
 const router         = express.Router()
 const authMiddleware = require('../middlewares/auth')
-const { Account }    = require('../models')
+const { Account, Transaction, Item, sequelize } = require('../models')
 
 // GET /api/accounts — lista as contas do usuário logado
 router.get('/', authMiddleware, async (req, res) => {
@@ -68,13 +68,30 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
 // DELETE /api/accounts/:id — deleta conta
 router.delete('/:id', authMiddleware, async (req, res) => {
+  const t = await sequelize.transaction()
   try {
-    const conta = await Account.findOne({ where: { id: req.params.id, userId: req.userId } })
-    if (!conta) return res.status(404).json({ erro: 'Conta não encontrada' })
+    const conta = await Account.findOne({
+      where: { id: req.params.id, userId: req.userId },
+      transaction: t,
+    })
+    if (!conta) {
+      await t.rollback()
+      return res.status(404).json({ erro: 'Conta não encontrada' })
+    }
 
-    await conta.destroy()
+    // Delete transactions referencing this account first
+    await Transaction.destroy({ where: { accountId: req.params.id }, transaction: t })
+
+    // Set accountId to null on items referencing this account
+    await Item.update({ accountId: null }, { where: { accountId: req.params.id }, transaction: t })
+
+    // Finally, destroy the account
+    await conta.destroy({ transaction: t })
+
+    await t.commit()
     return res.json({ mensagem: 'Conta removida' })
   } catch (err) {
+    await t.rollback()
     console.error('Erro ao deletar conta:', err)
     return res.status(500).json({ erro: 'Erro interno' })
   }

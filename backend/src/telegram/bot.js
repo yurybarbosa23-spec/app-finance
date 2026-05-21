@@ -1,6 +1,7 @@
 require('dotenv').config()
 const TelegramBot = require('node-telegram-bot-api')
-const { Transaction, Budget, Account, User } = require('../models')
+const { User } = require('../models')
+const { buildSystemPrompt, funcoes } = require('../controllers/aiController')
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true })
 
@@ -15,93 +16,6 @@ function addHistorico(chatId, papel, conteudo) {
   if (sessoes[chatId].historico.length > MAX_HISTORICO)
     sessoes[chatId].historico = sessoes[chatId].historico.slice(-MAX_HISTORICO)
 }
-
-// ─── FUNÇÕES QUE A IA PODE EXECUTAR ──────────────────────
-
-const funcoes = {
-
-  async registrarTransacao({ userId, descricao, valor, tipo, categoria, accountId }) {
-    const conta = await Account.findOne({ where: { id: accountId, userId } })
-    if (!conta) throw new Error('Conta não encontrada.')
-
-    const hoje = new Date().toISOString().split('T')[0]
-    await Transaction.create({ descricao, valor, tipo, categoria: categoria || 'outro', data: hoje, accountId, userId })
-
-    const novoSaldo = tipo === 'receita'
-      ? conta.saldo + valor
-      : conta.saldo - valor
-    await conta.update({ saldo: novoSaldo })
-
-    return `✅ Transação registrada!\n📝 ${descricao}\n💰 R$${valor.toFixed(2)} (${tipo})\n🏦 Conta: ${conta.nome}\n💳 Novo saldo: R$${novoSaldo.toFixed(2)}`
-  },
-
-  async transferirEntreContas({ userId, origemId, destinoId, valor, descricao }) {
-    const origem  = await Account.findOne({ where: { id: origemId,  userId } })
-    const destino = await Account.findOne({ where: { id: destinoId, userId } })
-    if (!origem)  throw new Error('Conta de origem não encontrada.')
-    if (!destino) throw new Error('Conta de destino não encontrada.')
-    if (origem.saldo < valor) throw new Error(`Saldo insuficiente. Saldo atual: R$${origem.saldo.toFixed(2)}`)
-
-    const hoje = new Date().toISOString().split('T')[0]
-    const desc = descricao || `Transferência para ${destino.nome}`
-
-    await Transaction.create({ descricao: desc, valor, tipo: 'despesa', categoria: 'transferencia', data: hoje, accountId: origemId, userId })
-    await Transaction.create({ descricao: desc, valor, tipo: 'receita', categoria: 'transferencia', data: hoje, accountId: destinoId, userId })
-    await origem.update({ saldo: origem.saldo - valor })
-    await destino.update({ saldo: destino.saldo + valor })
-
-    return `✅ Transferência realizada!\n💸 R$${valor.toFixed(2)} de "${origem.nome}" → "${destino.nome}"\n🏦 ${origem.nome}: R$${(origem.saldo - valor).toFixed(2)}\n🏦 ${destino.nome}: R$${(destino.saldo + valor).toFixed(2)}`
-  },
-
-  async criarOrcamento({ userId, categoria, limite }) {
-    const existente = await Budget.findOne({ where: { userId, categoria } })
-    if (existente) {
-      await existente.update({ limite })
-      return `✅ Orçamento de "${categoria}" atualizado para R$${limite.toFixed(2)}`
-    }
-    await Budget.create({ categoria, limite, userId })
-    return `✅ Orçamento criado!\n📂 Categoria: ${categoria}\n💰 Limite: R$${limite.toFixed(2)}`
-  },
-}
-
-// ─── PROMPT DO SISTEMA ────────────────────────────────────
-
-async function buildSystemPrompt(userId) {
-  const [transacoes, orcamentos, contas] = await Promise.all([
-    Transaction.findAll({ where: { userId }, order: [['createdAt', 'DESC']], limit: 50 }),
-    Budget.findAll({ where: { userId } }),
-    Account.findAll({ where: { userId } }),
-  ])
-
-  return `Você é um assistente financeiro pessoal. Responda sempre em português brasileiro.
-
-DADOS ATUAIS:
-- Contas: ${JSON.stringify(contas.map(c => ({ id: c.id, nome: c.nome, banco: c.banco, saldo: c.saldo })))}
-- Orçamentos: ${JSON.stringify(orcamentos.map(o => ({ id: o.id, categoria: o.categoria, limite: o.limite })))}
-- Últimas transações: ${JSON.stringify(transacoes.map(t => ({ id: t.id, descricao: t.descricao, valor: t.valor, tipo: t.tipo, categoria: t.categoria, data: t.data, accountId: t.accountId })))}
-
-AÇÕES DISPONÍVEIS — quando o usuário pedir para registrar, transferir ou criar orçamento, responda APENAS com um JSON neste formato exato (sem texto antes ou depois):
-
-Para registrar ENTRADA (salário, recebimento, pix recebido, dinheiro que entrou):
-{"acao":"registrarTransacao","params":{"descricao":"string","valor":0.0,"tipo":"receita","categoria":"string","accountId":0}}
-
-Para registrar SAÍDA (gasto, despesa, pagamento, compra, dinheiro que saiu):
-{"acao":"registrarTransacao","params":{"descricao":"string","valor":0.0,"tipo":"despesa","categoria":"string","accountId":0}}
-
-⚠️ REGRA CRÍTICA: o campo "tipo" aceita SOMENTE os valores "receita" ou "despesa".
-NUNCA use: "entrada", "saida", "gasto", "crédito", "débito" ou qualquer outro valor.
-
-Para transferir entre contas:
-{"acao":"transferirEntreContas","params":{"origemId":0,"destinoId":0,"valor":0.0,"descricao":"string"}}
-
-Para criar/atualizar orçamento:
-{"acao":"criarOrcamento","params":{"categoria":"string","limite":0.0}}
-
-Categorias válidas para receita: salario, freelance, investimento, presente, transferencia, aluguel_rec, premio, outro
-Categorias válidas para despesa: mercado, restaurante, transporte, moradia, saude, lazer, compras, contas, educacao, assinatura, combustivel, transferencia, outro
-
-Para qualquer outra pergunta, responda normalmente em texto usando emojis.`
-} // ← fechamento do buildSystemPrompt
 
 // ─── COMANDOS ─────────────────────────────────────────────
 
@@ -178,6 +92,80 @@ bot.on('message', async (msg) => {
   let loadMsg
   try {
     const { userId } = sessao
+    const msgLower = texto.toLowerCase().trim()
+    const ehPerguntaInformativa = msgLower.includes('como') || msgLower.includes('por que') || msgLower.includes('ajuda')
+
+    // ─── INTERCEPTOR DE SEGURANÇA PARA CANCELAMENTO ─────────────────
+    const termosCancelamento = ['cancela', 'cancele', 'desisti', 'desfaz', 'desfazer', 'deleta a última', 'deletar a última', 'estorna', 'estornar']
+    if (termosCancelamento.some(t => msgLower.includes(t)) && !ehPerguntaInformativa) {
+      try {
+        const resultado = await funcoes.cancelarUltimaTransacao({ userId })
+        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
+      } catch (e) {
+        console.warn('Falha no interceptor de cancelamento Telegram:', e.message)
+      }
+    }
+
+    // ─── INTERCEPTOR DE SEGURANÇA PARA CORREÇÃO DE VALOR ────────────
+    const termosCorrecao = ['corrija', 'corrigir', 'corrige', 'retifica', 'retificar']
+    const ehCorrecao = termosCorrecao.some(t => msgLower.includes(t)) || (msgLower.includes('na verdade foi') && msgLower.match(/\d+/))
+    if (ehCorrecao && !ehPerguntaInformativa) {
+      const match = msgLower.match(/(\d+[\.,]?\d*)/)
+      if (match) {
+        const novoValor = parseFloat(match[0].replace(',', '.'))
+        if (!isNaN(novoValor)) {
+          try {
+            const resultado = await funcoes.corrigirUltimaTransacao({ userId, novoValor })
+            return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
+          } catch (e) {
+            console.warn('Falha no interceptor de correção Telegram:', e.message)
+          }
+        }
+      }
+    }
+
+    // ─── INTERCEPTOR PARA PERGUNTAS ANALÍTICAS ──────────────────────
+    if (msgLower.includes('categoria') && msgLower.includes('mais') && (msgLower.includes('gastei') || msgLower.includes('gasto'))) {
+      try {
+        const resultado = await funcoes.obterCategoriaMaiorGasto({ userId })
+        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
+      } catch (e) {
+        console.warn('Falha no interceptor de maior categoria Telegram:', e.message)
+      }
+    }
+
+    if (msgLower.includes('maior gasto') || msgLower.includes('maior despesa') || msgLower.includes('gastei mais com o que')) {
+      try {
+        const resultado = await funcoes.obterMaiorGasto({ userId })
+        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
+      } catch (e) {
+        console.warn('Falha no interceptor de maior gasto Telegram:', e.message)
+      }
+    }
+
+    // ─── INTERCEPTOR PARA CONSULTA DE SALDO ─────────────────────────
+    const ehPerguntaSaldo = msgLower === 'saldo' || msgLower.includes('meu saldo') || msgLower.includes('quanto tenho') || msgLower.includes('qual o saldo') || msgLower.includes('saldo atual')
+    if (ehPerguntaSaldo) {
+      try {
+        const resultado = await funcoes.obterSaldo({ userId })
+        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
+      } catch (e) {
+        console.warn('Falha no interceptor de saldo Telegram:', e.message)
+      }
+    }
+
+    // ─── INTERCEPTOR PARA LISTAGEM DE TRANSAÇÕES (EXTRATO) ──────────
+    const ehPerguntaTransacoes = msgLower.includes('extrato') || msgLower.includes('lançamento') || msgLower.includes('lancamento') || msgLower.includes('transaç') || msgLower.includes('transac')
+    if (ehPerguntaTransacoes) {
+      try {
+        const resultado = await funcoes.listarTransacoes({ userId })
+        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
+      } catch (e) {
+        console.warn('Falha no interceptor de listagem Telegram:', e.message)
+      }
+    }
+
+    // ─── PROCESSAMENTO PELA IA ──────────────────────────────────────
     const systemPrompt = await buildSystemPrompt(userId)
 
     const messages = [
@@ -188,13 +176,38 @@ bot.on('message', async (msg) => {
 
     loadMsg = await bot.sendMessage(chatId, '🤔 Processando...')
 
+    const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4:e4b'
     const ollamaRes = await fetch('http://localhost:11434/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'deepseek-r1:8b', messages, stream: false }),
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages,
+        options: { temperature: 0 },
+        stream: false
+      }),
     })
 
-    const data = JSON.parse(await ollamaRes.text())
+    const rawText = await ollamaRes.text()
+    let data
+    try {
+      data = JSON.parse(rawText)
+    } catch (parseErr) {
+      return bot.editMessageText(`❌ Resposta inválida do Ollama: ${rawText}`, {
+        chat_id: chatId, message_id: loadMsg.message_id,
+      })
+    }
+
+    if (data.error) {
+      let errStr = `❌ Erro no Ollama: ${data.error}`
+      if (data.error.includes('requires more system memory')) {
+        errStr = `⚠️ **O Ollama ficou sem memória!**\n\nO modelo (\`${OLLAMA_MODEL}\`) exige mais memória RAM livre do que está disponível no momento.`
+      }
+      return bot.editMessageText(errStr, {
+        chat_id: chatId, message_id: loadMsg.message_id,
+      })
+    }
+
     let resposta = data.message?.content?.trim()
 
     // Remove bloco <think> do DeepSeek
@@ -214,9 +227,11 @@ bot.on('message', async (msg) => {
         if (funcoes[acao]) {
           const resultado = await funcoes[acao]({ userId, ...params })
           addHistorico(chatId, 'user', texto)
-          addHistorico(chatId, 'assistant', resultado)
+          addHistorico(chatId, 'model', resultado)
           return bot.editMessageText(resultado, {
-            chat_id: chatId, message_id: loadMsg.message_id,
+            chat_id: chatId,
+            message_id: loadMsg.message_id,
+            parse_mode: 'Markdown',
           })
         }
       } catch (e) {
@@ -226,7 +241,7 @@ bot.on('message', async (msg) => {
 
     // ─── Resposta normal ──────────────────────────────────
     addHistorico(chatId, 'user', texto)
-    addHistorico(chatId, 'assistant', resposta)
+    addHistorico(chatId, 'model', resposta)
 
     await bot.editMessageText(resposta, {
       chat_id: chatId,

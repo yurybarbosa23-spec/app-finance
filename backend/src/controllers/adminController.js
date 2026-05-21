@@ -1,12 +1,20 @@
 const bcrypt = require('bcryptjs')
 const { Op } = require('sequelize')
-const { User, Account, Transaction, Item } = require('../models')
+const { User, Account, Transaction, Item, Budget, Bill, sequelize } = require('../models')
 
 exports.stats = async (req, res) => {
   try {
     const totalUsuarios   = await User.count({ where: { isAdmin: false } })
     const totalContas     = await Account.count()
     const totalTransacoes = await Transaction.count()
+    
+    // Novas métricas agregadas
+    const totalReceitas   = (await Transaction.sum('valor', { where: { tipo: 'receita' } })) || 0
+    const totalDespesas   = (await Transaction.sum('valor', { where: { tipo: 'despesa' } })) || 0
+    const totalBills      = await Bill.count()
+    const totalBudgets    = await Budget.count()
+    const totalItems      = await Item.count()
+
     const accounts        = await Account.findAll()
     const saldoTotal      = accounts.reduce((a, c) => a + Number(c.saldo), 0)
     const ultimosUsuarios = await User.findAll({
@@ -14,12 +22,40 @@ exports.stats = async (req, res) => {
       order: [['createdAt', 'DESC']],
       limit: 5,
     })
-    res.json({ totalUsuarios, totalContas, totalTransacoes, saldoTotal, ultimosUsuarios })
+    res.json({
+      totalUsuarios,
+      totalContas,
+      totalTransacoes,
+      totalReceitas,
+      totalDespesas,
+      totalBills,
+      totalBudgets,
+      totalItems,
+      saldoTotal,
+      ultimosUsuarios
+    })
   } catch (err) {
     console.error(err)
     res.status(500).json({ erro: 'Erro ao buscar stats' })
   }
 }
+
+exports.listarTransacoesGerais = async (req, res) => {
+  try {
+    const transacoes = await Transaction.findAll({
+      order: [['createdAt', 'DESC']],
+      include: [
+        { model: User, attributes: ['id', 'nome', 'email'] },
+        { model: Account, attributes: ['id', 'nome', 'banco', 'cor'] }
+      ]
+    })
+    res.json(transacoes)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ erro: 'Erro ao listar transações gerais' })
+  }
+}
+
 
 exports.listarUsuarios = async (req, res) => {
   try {
@@ -68,8 +104,8 @@ exports.deletarUsuario = async (req, res) => {
       await Transaction.destroy({ where: { accountId: acc.id } })
     }
 
-    await Account.destroy({ where: { userId: req.params.id } })
     await Item.destroy({ where: { userId: req.params.id } })
+    await Account.destroy({ where: { userId: req.params.id } })
     await user.destroy()
 
     res.json({ mensagem: 'Usuário removido com sucesso' })
@@ -165,15 +201,22 @@ exports.criarContaUsuario = async (req, res) => {
 }
 
 exports.deletarConta = async (req, res) => {
+  const t = await sequelize.transaction()
   try {
-    const account = await Account.findByPk(req.params.id)
-    if (!account) return res.status(404).json({ erro: 'Conta não encontrada' })
+    const account = await Account.findByPk(req.params.id, { transaction: t })
+    if (!account) {
+      await t.rollback()
+      return res.status(404).json({ erro: 'Conta não encontrada' })
+    }
 
-    await Transaction.destroy({ where: { accountId: account.id } })
-    await account.destroy()
+    await Transaction.destroy({ where: { accountId: account.id }, transaction: t })
+    await Item.update({ accountId: null }, { where: { accountId: account.id }, transaction: t })
+    await account.destroy({ transaction: t })
 
+    await t.commit()
     res.json({ mensagem: 'Conta removida' })
   } catch (err) {
+    await t.rollback()
     console.error(err)
     res.status(500).json({ erro: 'Erro ao deletar conta' })
   }
@@ -189,8 +232,8 @@ exports.resetarTudo = async (req, res) => {
       await Transaction.destroy({ where: { accountId: acc.id } })
     }
 
-    await Account.destroy({ where: { userId: req.params.id } })
     await Item.destroy({ where: { userId: req.params.id } })
+    await Account.destroy({ where: { userId: req.params.id } })
 
     res.json({ mensagem: 'Conta resetada com sucesso' })
   } catch (err) {

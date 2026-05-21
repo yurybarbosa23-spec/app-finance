@@ -5,6 +5,7 @@ import { useAccountsStore }     from '../stores/accounts'
 import { useTransactionsStore } from '../stores/transactions'
 import { useBudgetsStore }     from '../stores/budgets'
 import { useItemsStore }        from '../stores/items'
+import { useBillsStore }        from '../stores/bills'
 import { useCurrency }          from '../composables/useCurrency'
 import { useParallax }          from '../composables/useParallax'
 import api from '../services/api'
@@ -19,6 +20,7 @@ const accounts = useAccountsStore()
 const tx       = useTransactionsStore()
 const items    = useItemsStore()
 const budgets  = useBudgetsStore()
+const billsStore = useBillsStore()
 const { mascaraMoeda, parseMoeda, formatar, formatarParaInput } = useCurrency()
 
 
@@ -29,12 +31,14 @@ const navItems = [
   { val:'historico',     icon:'📋', label:'Histórico' },
   { val:'metricas',      icon:'📊', label:'Métricas'  },
   { val:'investimentos', icon:'📦', label:'Itens'     },
+  { val:'dividas',       icon:'💸', label:'Dívidas'   },
 ]
 
 // ── Navegação
 const aba             = ref('inicio')
 const subAbaInv       = ref('venda')
 const subAbaHistorico = ref('lancamentos')
+const subAbaDivida    = ref('todas')
 
 // ── Modais
 const modalLancamento    = ref(false)
@@ -43,23 +47,80 @@ const modalItem          = ref(false)
 const modalTransferencia = ref(false)
 const modalEditar        = ref(false)
 const modalAlertas       = ref(false)
+const modalBill          = ref(false)
 const appCarregando      = ref(true)
 const loadingGlobal      = ref(false)
 const loadingMsg         = ref('Carregando...')
 const itemParaVenda      = ref(null)
 const contaParaDel       = ref(null)
+const billParaPagar      = ref(null)
 
 // ── Finora IA Chat
 const showFinoraChat = ref(false)
 const finoraInput = ref('')
+const finoraIsThinking = ref(false)
+const finoraHasTyped = ref(false)
 const finoraMessages = ref([
   { role: 'bot', text: 'Olá! Sou a Finora, sua assistente financeira inteligente. Posso analisar seus gastos, sugerir investimentos ou explicar tendências. Como posso te ajudar hoje?' }
 ])
+
+// ── Drag state
+const finoraPos = ref({ x: -1, y: -1 }) // -1 means uninitialized → CSS default
+const finoraDragging = ref(false)
+const finoraDragOffset = ref({ x: 0, y: 0 })
+
+function initFinoraPosition() {
+  if (finoraPos.value.x === -1) {
+    const w = window.innerWidth
+    const h = window.innerHeight
+    finoraPos.value = { x: w - 420, y: Math.max(40, h - 660) }
+  }
+}
+
+function onFinoraDragStart(e) {
+  const ev = e.touches ? e.touches[0] : e
+  finoraDragging.value = true
+  finoraDragOffset.value = {
+    x: ev.clientX - finoraPos.value.x,
+    y: ev.clientY - finoraPos.value.y
+  }
+  document.addEventListener('mousemove', onFinoraDragMove)
+  document.addEventListener('mouseup', onFinoraDragEnd)
+  document.addEventListener('touchmove', onFinoraDragMove, { passive: false })
+  document.addEventListener('touchend', onFinoraDragEnd)
+}
+
+function onFinoraDragMove(e) {
+  if (!finoraDragging.value) return
+  e.preventDefault()
+  const ev = e.touches ? e.touches[0] : e
+  const maxX = window.innerWidth - 60
+  const maxY = window.innerHeight - 60
+  finoraPos.value = {
+    x: Math.max(0, Math.min(maxX, ev.clientX - finoraDragOffset.value.x)),
+    y: Math.max(0, Math.min(maxY, ev.clientY - finoraDragOffset.value.y))
+  }
+}
+
+function onFinoraDragEnd() {
+  finoraDragging.value = false
+  document.removeEventListener('mousemove', onFinoraDragMove)
+  document.removeEventListener('mouseup', onFinoraDragEnd)
+  document.removeEventListener('touchmove', onFinoraDragMove)
+  document.removeEventListener('touchend', onFinoraDragEnd)
+}
+
+function onFinoraInputChange() {
+  finoraHasTyped.value = finoraInput.value.trim().length > 0
+}
+
 async function sendFinoraMessage() {
   const userMsg = finoraInput.value.trim()
   if (!userMsg) return
   finoraMessages.value.push({ role: 'user', text: userMsg })
   finoraInput.value = ''
+  finoraHasTyped.value = false
+  finoraIsThinking.value = true
   
   finoraMessages.value.push({ role: 'bot', text: '', loading: true })
   const botMsgIndex = finoraMessages.value.length - 1
@@ -91,16 +152,19 @@ async function sendFinoraMessage() {
     if (!res.ok) {
       finoraMessages.value[botMsgIndex].loading = false
       finoraMessages.value[botMsgIndex].text = '❌ Erro ao processar solicitação.'
+      finoraIsThinking.value = false
       return
     }
     
     const data = await res.json()
     finoraMessages.value[botMsgIndex].loading = false
     finoraMessages.value[botMsgIndex].text = data.text
+    finoraIsThinking.value = false
     scrollChat()
   } catch (err) {
     finoraMessages.value[botMsgIndex].loading = false
     finoraMessages.value[botMsgIndex].text = '❌ Erro: Não foi possível conectar ao Ollama local.'
+    finoraIsThinking.value = false
   }
 }
 
@@ -342,7 +406,65 @@ const formConta = ref({ banco:'', saldo:0, cor:'#14b8a6' })
 const formTx    = ref({ descricao:'', valor:0, tipo:'despesa', categoria:'mercado', data:hoje(), accountId:'' })
 const formItem  = ref({ nome:'', descricao:'', valor:0, tipo:'venda', accountId:'' })
 const formVenda = ref({ accountId:'' })
+const formBill = ref({ id: null, descricao: '', valor: 0, diaVencimento: 5, tipo: 'unica', recorrencia: 'indefinida', totalParcelas: 0 })
+const formPagamentoBill = ref({ accountId: '' })
+const inputValorBill = ref(null)
+const loadingBill = ref(false)
 const toast     = ref({ visivel:false, mensagem:'' })
+
+const dividasExibidas = computed(() => {
+  if (subAbaDivida.value === 'pendentes') {
+    return billsStore.bills.filter(b => !b.pagaEsteMes)
+  }
+  if (subAbaDivida.value === 'pagas') {
+    return billsStore.bills.filter(b => b.pagaEsteMes)
+  }
+  return billsStore.bills
+})
+
+const dividasOverview = computed(() => {
+  const hojeDia = new Date().getDate()
+  
+  // Dívidas deste mês
+  const pendentesDesteMes = billsStore.bills.filter(b => !b.pagaEsteMes)
+  const totalValorPendentes = pendentesDesteMes.reduce((a, b) => a + Number(b.valor), 0)
+  
+  // Vencidas e Vencendo Logo
+  const vencidas = pendentesDesteMes.filter(b => Number(b.diaVencimento) < hojeDia)
+  const vencendoLogo = pendentesDesteMes.filter(b => Number(b.diaVencimento) >= hojeDia && Number(b.diaVencimento) <= hojeDia + 3)
+  
+  // Próximo mês
+  const recorrentesProximoMes = billsStore.bills.filter(b => {
+    if (b.tipo !== 'recorrente') return false
+    if (b.recorrencia === 'indefinida') return true
+    if (b.recorrencia === 'parcelas') {
+      if (b.pagaEsteMes) {
+        return b.parcelasRestantes > 0
+      } else {
+        return b.parcelasRestantes > 1
+      }
+    }
+    return false
+  })
+  const totalValorProximoMes = recorrentesProximoMes.reduce((a, b) => a + Number(b.valor), 0)
+  
+  // Assinaturas recorrentes (tipo recorrente)
+  const assinaturasRecorrentes = billsStore.bills.filter(b => b.tipo === 'recorrente')
+  const totalAssinaturas = assinaturasRecorrentes.reduce((a, b) => a + Number(b.valor), 0)
+  
+  return {
+    pendentesCount: pendentesDesteMes.length,
+    pendentesValor: totalValorPendentes,
+    vencidasCount: vencidas.length,
+    vencidasList: vencidas,
+    vencendoLogoCount: vencendoLogo.length,
+    vencendoLogoList: vencendoLogo,
+    proximoMesCount: recorrentesProximoMes.length,
+    proximoMesValor: totalValorProximoMes,
+    recorrentesCount: assinaturasRecorrentes.length,
+    recorrentesValor: totalAssinaturas
+  }
+})
 
 function mostrarToast(msg) {
   toast.value = { visivel:true, mensagem:msg }
@@ -365,6 +487,7 @@ let pollingInterval = null
 async function sincronizarSaldo() {
   try {
     await accounts.carregar()
+    await billsStore.carregar()
     const novoSaldo = Number(accounts.saldoTotal || 0)
     const atual     = Number(saldoExibido.value    || 0)
     if (Math.abs(novoSaldo - atual) >= 0.01) {
@@ -382,6 +505,7 @@ onMounted(async () => {
   await tx.carregar()
   await items.carregar()
   await budgets.carregar()
+  await billsStore.carregar()
   saldoExibido.value = Number(accounts.saldoTotal || 0)
   appCarregando.value = false
   // Polling a cada 8 segundos — atualiza tudo (saldo + extrato + métricas)
@@ -391,6 +515,137 @@ onMounted(async () => {
 onUnmounted(() => {
   if (pollingInterval) clearInterval(pollingInterval)
 })
+
+// ── Ações de Dívidas
+function abrirNovaDivida() {
+  formBill.value = {
+    id: null,
+    descricao: '',
+    valor: 0,
+    diaVencimento: 5,
+    tipo: 'unica',
+    recorrencia: 'indefinida',
+    totalParcelas: 0
+  }
+  modalBill.value = true
+  nextTick(() => {
+    if (inputValorBill.value) inputValorBill.value.value = ''
+  })
+}
+
+function abrirEditarDivida(bill) {
+  formBill.value = {
+    id: bill.id,
+    descricao: bill.descricao || '',
+    valor: Number(bill.valor),
+    diaVencimento: Number(bill.diaVencimento),
+    tipo: bill.tipo || 'unica',
+    recorrencia: bill.recorrencia || 'indefinida',
+    totalParcelas: Number(bill.totalParcelas || 0)
+  }
+  modalBill.value = true
+  nextTick(() => {
+    if (inputValorBill.value) {
+      inputValorBill.value.value = formatarParaInput(Number(bill.valor))
+    }
+  })
+}
+
+async function salvarDivida() {
+  const valor = parseMoeda(inputValorBill.value?.value || '0')
+  if (!formBill.value.descricao) { mostrarToast('⚠️ Informe a descrição'); return }
+  if (!valor || valor <= 0) { mostrarToast('⚠️ Informe o valor'); return }
+  if (!formBill.value.diaVencimento || formBill.value.diaVencimento < 1 || formBill.value.diaVencimento > 31) {
+    mostrarToast('⚠️ Dia de vencimento inválido (1-31)'); return
+  }
+
+  loadingBill.value = true
+  mostrarLoading('Salvando dívida...')
+  try {
+    const payload = {
+      descricao: formBill.value.descricao,
+      valor: valor,
+      diaVencimento: formBill.value.diaVencimento,
+      tipo: formBill.value.tipo,
+      recorrencia: formBill.value.recorrencia,
+      totalParcelas: formBill.value.totalParcelas
+    }
+
+    if (formBill.value.id) {
+      await billsStore.atualizar(formBill.value.id, payload)
+      mostrarToast('✅ Dívida atualizada!')
+    } else {
+      await billsStore.criar(payload)
+      mostrarToast('✅ Dívida cadastrada!')
+    }
+    modalBill.value = false
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro ao salvar dívida')
+  } finally {
+    loadingBill.value = false
+    ocultarLoading()
+  }
+}
+
+function abrirPagarDivida(bill) {
+  billParaPagar.value = bill
+  formPagamentoBill.value.accountId = accounts.contas[0]?.id || ''
+}
+
+async function confirmarPagamentoDivida() {
+  if (!formPagamentoBill.value.accountId) { mostrarToast('⚠️ Selecione uma conta'); return }
+  if (!billParaPagar.value) return
+
+  mostrarLoading('Registrando pagamento...')
+  try {
+    await billsStore.pagar(billParaPagar.value.id, formPagamentoBill.value.accountId, true)
+    await tx.carregar()
+    await accounts.carregar()
+    animarSaldo(accounts.saldoTotal)
+    billParaPagar.value = null
+    mostrarToast('✅ Pagamento registrado!')
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro ao pagar dívida')
+  } finally {
+    ocultarLoading()
+  }
+}
+
+async function estornarDivida(bill) {
+  mostrarLoading('Estornando pagamento...')
+  try {
+    const txParaDeletar = tx.transacoes.find(t => t.descricao === `Pagamento: ${bill.descricao}` && Number(t.valor) === Number(bill.valor))
+    await billsStore.estornar(bill.id)
+    if (txParaDeletar) {
+      await tx.deletar(txParaDeletar.id)
+    } else {
+      await tx.carregar()
+    }
+    await accounts.carregar()
+    animarSaldo(accounts.saldoTotal)
+    mostrarToast('🔄 Pagamento estornado!')
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro ao estornar pagamento')
+  } finally {
+    ocultarLoading()
+  }
+}
+
+async function deletarDivida(id) {
+  mostrarLoading('Removendo dívida...')
+  try {
+    await billsStore.deletar(id)
+    mostrarToast('🗑️ Dívida removida!')
+  } catch (err) {
+    console.error(err)
+    mostrarToast('❌ Erro ao remover dívida')
+  } finally {
+    ocultarLoading()
+  }
+}
 
 
 // ── Ações existentes
@@ -802,6 +1057,11 @@ function fecharLancamentoStep() {
   if (inputValor.value) inputValor.value.value = ''
 }
 
+function abrirNovoLancamento(tipo) {
+  selecionarTipoLancamento(tipo)
+  modalLancamento.value = true
+}
+
 function selecionarTipoLancamento(tipo) {
   formTx.value.tipo = tipo
   formTx.value.valor = 0
@@ -947,6 +1207,298 @@ const contasOrigemTransf = computed(() =>
     : accounts.contas
 )
 
+const activeWalletTab = ref('main')
+const searchQuery = ref('')
+const selectedIndicatorPeriod = ref('Anual')
+
+const sidebarItems = [
+  { val:'inicio',        label:'Início',        svg:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-layout-grid"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>' },
+  { val:'contas',        label:'Contas',        svg:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-credit-card"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>' },
+  { val:'historico',     label:'Histórico',     svg:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-list"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 9h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>' },
+  { val:'metricas',      label:'Métricas',      svg:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bar-chart-2"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>' },
+  { val:'investimentos', label:'Itens',         svg:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>' },
+  { val:'dividas',       label:'Dívidas',       svg:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-receipt"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg>' },
+]
+
+const abaLabel = computed(() => {
+  const item = sidebarItems.find(i => i.val === aba.value)
+  return item ? item.label : 'Visão Geral'
+})
+
+const salesBarChartData = computed(() => {
+  const now = new Date()
+  const currentMonth = now.getMonth()
+  const currentYear = now.getFullYear()
+  
+  // Determine start month: use account createdAt, fallback to earliest transaction, fallback to current month
+  let startDate = new Date(currentYear, currentMonth, 1)
+  
+  if (auth.user?.createdAt) {
+    startDate = new Date(auth.user.createdAt)
+  } else if (tx.transacoes.length > 0) {
+    const earliest = tx.transacoes.reduce((min, t) => {
+      const d = new Date(t.data + 'T12:00:00')
+      return d < min ? d : min
+    }, new Date())
+    startDate = earliest
+  }
+  
+  const startMonth = startDate.getMonth()
+  const startYear = startDate.getFullYear()
+  
+  // Calculate number of months from start to now
+  const totalMonths = (currentYear - startYear) * 12 + (currentMonth - startMonth) + 1
+  // We want to show at least 7 months to fill the card beautifully.
+  // If the account history is shorter, we pad it with future months up to 7. We cap at 12 months max.
+  const monthCount = Math.min(Math.max(7, totalMonths), 12)
+  
+  const results = Array.from({ length: monthCount }, (_, idx) => {
+    const d = new Date(startYear, startMonth + idx, 1)
+    let labelPt = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')
+    labelPt = labelPt.charAt(0).toUpperCase() + labelPt.slice(1)
+    return {
+      monthIdx: d.getMonth(),
+      year: d.getFullYear(),
+      label: labelPt,
+      categorias: {},
+      totalSaidas: 0
+    }
+  })
+  
+  tx.transacoes.forEach(t => {
+    const tDate = new Date(t.data + 'T12:00:00')
+    const match = results.find(r => r.monthIdx === tDate.getMonth() && r.year === tDate.getFullYear())
+    if (match) {
+      if (t.tipo === 'despesa') {
+        const val = Number(t.valor)
+        match.categorias[t.categoria] = (match.categorias[t.categoria] || 0) + val
+        match.totalSaidas += val
+      }
+    }
+  })
+  
+  const hasTxData = tx.transacoes.some(t => t.tipo === 'despesa')
+  
+  let maxVal = 100
+  if (!hasTxData) {
+    // Show fallback data only when there are zero expense transactions
+    results.forEach((r, idx) => {
+      const base = 800 + idx * 200
+      r.totalSaidas = base
+      r.categorias = {
+        'moradia': base * 0.4,
+        'mercado': base * 0.3,
+        'lazer': base * 0.15,
+        'contas': base * 0.15
+      }
+    })
+  }
+  
+  results.forEach(r => {
+    if (r.totalSaidas > maxVal) {
+      maxVal = r.totalSaidas
+    }
+  })
+  
+  return results.map(r => {
+    const segments = Object.entries(r.categorias).map(([catId, valor]) => {
+      return {
+        catId,
+        valor,
+        label: labelCat[catId] || catId,
+        emoji: emojiCat[catId] || '📦',
+        cor: corCat[catId] || '#6b7280'
+      }
+    }).filter(s => s.valor > 0).sort((a, b) => b.valor - a.valor)
+    
+    return {
+      label: r.label,
+      totalSaidas: r.totalSaidas,
+      totalPct: Math.min((r.totalSaidas / maxVal) * 100, 100),
+      segments
+    }
+  })
+})
+
+const topCategoriesInChart = computed(() => {
+  const counts = {}
+  salesBarChartData.value.forEach(b => {
+    b.segments.forEach(seg => {
+      counts[seg.catId] = (counts[seg.catId] || 0) + seg.valor
+    })
+  })
+  return Object.entries(counts)
+    .map(([catId, total]) => ({
+      catId,
+      total,
+      label: labelCat[catId] || catId,
+      cor: corCat[catId] || '#6b7280'
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 4)
+})
+
+const salesBarChartYAxis = computed(() => {
+  const allVals = salesBarChartData.value.map(r => r.totalSaidas)
+  const maxVal = Math.max(...allVals, 100)
+  return Array.from({ length: 6 }, (_, i) => {
+    const val = (maxVal * (5 - i)) / 5
+    if (val >= 1000) {
+      return `R$ ${(val / 1000).toFixed(0)}k`
+    }
+    return `R$ ${Math.round(val)}`
+  })
+})
+
+const indicatorsChartPoints = computed(() => {
+  const period = selectedIndicatorPeriod.value
+  let length = 15
+  let daysInterval = 1
+  let isMonthlyView = false
+  
+  if (period === 'Diário') {
+    length = 7
+    daysInterval = 1
+  } else if (period === 'Mensal') {
+    length = 30
+    daysInterval = 1
+  } else { // 'Anual'
+    length = 12
+    isMonthlyView = true
+  }
+  
+  let results = []
+  const now = new Date()
+  
+  if (isMonthlyView) {
+    results = Array.from({ length }, (_, idx) => {
+      const d = new Date()
+      d.setMonth(now.getMonth() - idx)
+      let mLabel = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')
+      mLabel = mLabel.charAt(0).toUpperCase() + mLabel.slice(1)
+      return {
+        label: mLabel,
+        dateKey: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        balance: 0
+      }
+    }).reverse()
+  } else {
+    results = Array.from({ length }, (_, idx) => {
+      const d = new Date()
+      d.setDate(now.getDate() - idx * daysInterval)
+      const dayLabel = d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+      return {
+        label: dayLabel,
+        dateKey: d.toISOString().slice(0, 10),
+        balance: 0
+      }
+    }).reverse()
+  }
+  
+  let currentBalance = Number(accounts.saldoTotal || 0)
+  const sortedTxs = [...tx.transacoes].sort((a,b) => b.data.localeCompare(a.data))
+  
+  for (let i = results.length - 1; i >= 0; i--) {
+    const item = results[i]
+    item.balance = currentBalance
+    
+    let matchedTxs = []
+    if (isMonthlyView) {
+      matchedTxs = sortedTxs.filter(t => t.data.startsWith(item.dateKey))
+    } else {
+      matchedTxs = sortedTxs.filter(t => t.data === item.dateKey)
+    }
+    
+    matchedTxs.forEach(t => {
+      if (t.tipo === 'receita') {
+        currentBalance -= Number(t.valor)
+      } else {
+        currentBalance += Number(t.valor)
+      }
+    })
+  }
+  
+  const hasTxData = tx.transacoes.length > 0
+  const mockBase = [1200, 1300, 1250, 1500, 1800, 1700, 1900, 2100, 2050, 2300, 2400, 2350]
+  
+  const width = 500
+  const height = 180
+  
+  const points = results.map((r, idx) => {
+    const x = (idx / (results.length - 1)) * width
+    let balVal = hasTxData ? r.balance : (mockBase[idx % mockBase.length] + idx * 50)
+    return { x, y: 0, balance: balVal, label: r.label }
+  })
+  
+  const maxBal = Math.max(...points.map(p => p.balance), 1000)
+  const minBal = Math.min(...points.map(p => p.balance), 0)
+  const range = maxBal - minBal || 1
+  
+  points.forEach(p => {
+    p.y = height - ((p.balance - minBal) / range) * (height - 50) - 30
+  })
+  
+  let dPath = ''
+  if (points.length > 0) {
+    dPath = `M ${points[0].x} ${points[0].y}`
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i]
+      const p1 = points[i+1]
+      const cpX1 = p0.x + (p1.x - p0.x) / 2
+      const cpY1 = p0.y
+      const cpX2 = p0.x + (p1.x - p0.x) / 2
+      const cpY2 = p1.y
+      dPath += ` C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${p1.x} ${p1.y}`
+    }
+  }
+  
+  let areaPath = ''
+  if (points.length > 0) {
+    areaPath = `${dPath} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`
+  }
+  
+  let peakIndex = points.length - 1
+  let maxValFound = -Infinity
+  points.forEach((p, idx) => {
+    if (p.balance > maxValFound) {
+      maxValFound = p.balance
+      peakIndex = idx
+    }
+  })
+  const peakPoint = points[peakIndex] || { x: width * 0.8, y: height * 0.3, balance: 0, label: '' }
+  
+  return {
+    linePath: dPath,
+    areaPath: areaPath,
+    points,
+    peakPoint
+  }
+})
+
+const connectionsMetrics = computed(() => {
+  const activeBudgets = budgets.budgets.filter(b => b.ativo)
+  const totalLimit = activeBudgets.reduce((a, b) => a + Number(b.limite), 0)
+  const totalSpent = activeBudgets.reduce((a, b) => a + Number(b.gastoAtual), 0)
+  const budgetPct = totalLimit > 0 ? Math.min(Math.round((totalSpent / totalLimit) * 100), 100) : 84
+  
+  const totalBillsCount = billsStore.bills.length
+  const paidBillsCount = billsStore.bills.filter(b => b.pagaEsteMes).length
+  const billsPct = totalBillsCount > 0 ? Math.round((paidBillsCount / totalBillsCount) * 100) : 100
+  
+  return {
+    budgetPct,
+    billsPct
+  }
+})
+
+const lastTransactionsSearch = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return tx.transacoes.slice(0, 5)
+  return tx.transacoes.filter(t => 
+    t.descricao?.toLowerCase().includes(q) || 
+    t.categoria?.toLowerCase().includes(q)
+  ).slice(0, 5)
+})
 </script>
 
 <template>
@@ -955,283 +1507,709 @@ const contasOrigemTransf = computed(() =>
 <Transition name="fade"><div v-if="loadingGlobal" class="ios-overlay"><div class="ios-loading-card"><div class="ios-spinner"></div><span>{{ loadingMsg }}</span></div></div></Transition>
 
 <div class="ios-app" :style="globalGlow()">
-<header class="ios-header">
-  <div class="ios-header-left">
-    <div class="ios-logo">💰</div>
-    <span class="ios-header-title" style="font-weight: 800; font-size: 1.1rem; margin-left: 0.5rem; display: none;">FinanceApp</span>
-  </div>
+  <!-- Desktop Left Sidebar -->
+  <aside class="sidebar-desktop">
+    <div class="sidebar-logo">
+      <svg class="hex-logo" viewBox="0 0 100 100" width="36" height="36">
+        <polygon points="50,5 95,27.5 95,72.5 50,95 5,72.5 5,27.5" fill="rgba(124, 58, 237, 0.12)" stroke="#a855f7" stroke-width="6"/>
+        <line x1="38" y1="35" x2="38" y2="65" stroke="#c084fc" stroke-width="5" stroke-linecap="round"/>
+        <line x1="50" y1="25" x2="50" y2="75" stroke="#a855f7" stroke-width="5" stroke-linecap="round"/>
+        <line x1="62" y1="35" x2="62" y2="65" stroke="#c084fc" stroke-width="5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <button v-for="item in sidebarItems" :key="item.val" @click.prevent="aba=item.val" :class="{active:aba===item.val}" class="sidebar-tab" :title="item.label">
+        <span class="sidebar-tab-icon" v-html="item.svg"></span>
+      </button>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <button class="sidebar-action-btn theme-toggle" @click="showFinoraChat=true" title="Falar com a Finora">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </button>
+      <button @click="modalPerfil=true" class="sidebar-action-btn" title="Perfil">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </button>
+      <button @click="auth.logout()" class="sidebar-action-btn danger" title="Sair">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  </aside>
 
-  <nav class="ios-header-nav">
-    <div class="ios-nav-slider" :style="{ transform: `translateX(${navItems.findIndex(i => i.val === aba) * 100}%)` }"></div>
-    <button v-for="item in navItems" :key="item.val" @click.prevent="aba=item.val" :class="{active:aba===item.val}" class="ios-header-tab">
-      {{ item.label }}
+  <!-- Right App Wrapper -->
+  <div class="app-main-wrapper">
+    <header class="app-header">
+      <div class="header-left">
+        <span class="breadcrumb-arrow">&gt;</span>
+        <h1 class="header-view-title">{{ abaLabel }}</h1>
+      </div>
+      
+      <div class="header-center-tabs">
+        <span class="header-wallet-tab active" @click="activeWalletTab='main'">
+          <span class="bullet purple"></span> Carteira Principal
+        </span>
+        <span class="header-wallet-tab" @click="aba='contas'">
+          <span class="bullet gray"></span> Todas as Carteiras ({{ accounts.contas.length.toString().padStart(2, '0') }})
+        </span>
+      </div>
+      
+      <div class="header-right">
+        <div class="user-profile-badge" @click="modalPerfil=true">
+          <div class="user-avatar-circle">{{ auth.nome?.charAt(0).toUpperCase() || 'S' }}</div>
+          <div class="user-meta">
+            <span class="user-name">{{ auth.nome || 'Simson Will' }}</span>
+            <span class="user-subtext">{{ auth.email || 'simsonwill.com' }}</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-content-area">
+      <!-- Início Tab -->
+      <div v-show="aba==='inicio'" class="inicio-dashboard-layout">
+        
+        <!-- balance area (Your Wallet) -->
+        <div class="dashboard-wallet-card">
+          <div class="wallet-left">
+            <div class="wallet-icon-wrapper">
+              <svg class="wallet-icon-svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <line x1="12" y1="4" x2="12" y2="20"/>
+              </svg>
+            </div>
+            <div class="wallet-balance-info">
+              <p class="wallet-label">Sua carteira &bull; Saldo</p>
+              <h2 class="wallet-amount" :class="{up:saldoAnimando==='up',down:saldoAnimando==='down'}">{{ formatar(saldoExibido) }} <span class="wallet-currency">BRL</span></h2>
+              <p class="wallet-comparison">
+                Você economizou 2.8% a mais que no mês anterior
+              </p>
+            </div>
+          </div>
+          
+          <div class="wallet-stats">
+            <div class="wallet-stat-item">
+              <p class="stat-label">Entradas</p>
+              <p class="stat-value">{{ formatar(totalEntradas) }}</p>
+            </div>
+            <div class="wallet-stat-item">
+              <p class="stat-label">Saídas</p>
+              <p class="stat-value">{{ formatar(totalSaidas) }}</p>
+            </div>
+            <div class="wallet-search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" v-model="searchQuery" placeholder="Buscar..." />
+            </div>
+            <div class="wallet-actions">
+              <button class="wallet-btn-action green" @click="abrirNovoLancamento('receita')" title="Adicionar Saldo">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                <span>Adicionar Saldo</span>
+              </button>
+              <button class="wallet-btn-action red" @click="abrirNovoLancamento('despesa')" title="Retirada">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+                <span>Retirada</span>
+              </button>
+              <button class="wallet-circle-btn accent" @click="abrirTransferenciaStep()" title="Transferir">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="m17 2 5 5-5 5"/><path d="M2 17h20"/><path d="m7 22-5-5 5-5"/><path d="M22 7H2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 1: Charts -->
+        <div class="dashboard-row">
+          
+          <!-- Sales Analytics Card -->
+          <div class="dashboard-card sales-analytics-card">
+            <div class="card-header">
+              <h3 class="card-title">Gastos por Categoria</h3>
+              <div class="header-legend" style="display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: flex-end;">
+                <span v-for="cat in topCategoriesInChart" :key="cat.catId" class="legend-item-inline" style="display: inline-flex; align-items: center; gap: 6px; font-size: .7rem; color: var(--text3);">
+                  <span class="legend-dot" :style="{ backgroundColor: cat.cor, boxShadow: '0 0 6px ' + cat.cor }"></span>
+                  {{ cat.label }}
+                </span>
+              </div>
+              <button class="card-menu-btn" @click="aba='historico'">&bull;&bull;&bull;</button>
+            </div>
+            
+            <div class="sales-pills-row">
+              <div class="sales-pill-item">
+                <div class="pill-icon-down">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+                </div>
+                <div class="pill-meta">
+                  <span class="pill-title">ENTRADAS DO MÊS</span>
+                  <span class="pill-val">{{ formatar(totalEntradas) }}</span>
+                </div>
+              </div>
+              <div class="sales-pill-item">
+                <div class="pill-icon-up">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/></svg>
+                </div>
+                <div class="pill-meta">
+                  <span class="pill-title">SAÍDAS DO MÊS</span>
+                  <span class="pill-val">{{ formatar(totalSaidas) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bar Chart Display -->
+            <div class="bar-chart-container">
+              <div class="bar-chart-y-axis">
+                <span v-for="step in salesBarChartYAxis" :key="step">{{ step }}</span>
+              </div>
+              <div class="bar-chart-bars">
+                <div v-for="b in salesBarChartData" :key="b.label" class="bar-column tooltip-trigger">
+                  <div class="bar-tracks-wrapper">
+                    <div class="bar-track-bg">
+                      <div class="bar-track-stacked" :style="{ height: b.totalPct + '%' }">
+                        <div v-for="seg in b.segments" :key="seg.catId" class="bar-segment" :style="{ height: (seg.valor / b.totalSaidas) * 100 + '%', backgroundColor: seg.cor, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), 0 0 4px ' + seg.cor }" :title="`${seg.label}: ${formatar(seg.valor)}`"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="bar-label">{{ b.label }}</span>
+                  
+                  <!-- Tooltip -->
+                  <div class="chart-tooltip">
+                    <div class="tooltip-title">{{ b.label }}</div>
+                    <div class="tooltip-row total-row" style="margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 4px;">
+                      <strong>Total: {{ formatar(b.totalSaidas) }}</strong>
+                    </div>
+                    <div v-for="seg in b.segments" :key="seg.catId" class="tooltip-row" style="display: flex; align-items: center; gap: 6px; margin-top: 3px;">
+                      <span class="legend-dot" :style="{ backgroundColor: seg.cor, boxShadow: '0 0 6px ' + seg.cor }"></span>
+                      <span>{{ seg.emoji }} {{ seg.label }}: {{ formatar(seg.valor) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Indicators Card -->
+          <div class="dashboard-card indicators-card">
+            <div class="card-header">
+              <div class="header-left-meta">
+                <h3 class="card-title">Evolução do Saldo</h3>
+                <p class="card-subtitle">Histórico de saldo da carteira principal</p>
+              </div>
+              <div class="indicators-periods">
+                <button v-for="p in ['Diário', 'Mensal', 'Anual']" :key="p" @click="selectedIndicatorPeriod=p" :class="{active: selectedIndicatorPeriod===p}">
+                  {{ p }}
+                </button>
+              </div>
+            </div>
+
+            <!-- SVG Bezier Path Area Chart -->
+            <div class="indicators-chart-container">
+              <svg class="indicators-svg" viewBox="0 0 500 180" width="100%" height="100%">
+                <defs>
+                  <linearGradient id="purple-area-grad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#a855f7" stop-opacity="0.35" />
+                    <stop offset="100%" stop-color="#a855f7" stop-opacity="0.0" />
+                  </linearGradient>
+                  <filter id="glow-filter" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="6" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                  </filter>
+                </defs>
+
+                <!-- Grid lines -->
+                <line x1="0" y1="30" x2="500" y2="30" stroke="rgba(255,255,255,0.03)" stroke-width="1" />
+                <line x1="0" y1="75" x2="500" y2="75" stroke="rgba(255,255,255,0.03)" stroke-width="1" />
+                <line x1="0" y1="120" x2="500" y2="120" stroke="rgba(255,255,255,0.03)" stroke-width="1" />
+
+                <!-- Filled Area -->
+                <path :d="indicatorsChartPoints.areaPath" fill="url(#purple-area-grad)" />
+
+                <!-- Glow underneath line -->
+                <path :d="indicatorsChartPoints.linePath" fill="none" stroke="#a855f7" stroke-width="8" opacity="0.15" filter="url(#glow-filter)" />
+                
+                <!-- Smooth Bezier Line -->
+                <path :d="indicatorsChartPoints.linePath" fill="none" stroke="#c084fc" stroke-width="3" stroke-linecap="round" />
+
+                <!-- Interactive marker circles -->
+                <circle v-for="p in indicatorsChartPoints.points" :key="p.label" :cx="p.x" :cy="p.y" r="4.5" class="chart-dot-marker">
+                  <title>{{ p.label }}: {{ formatar(p.balance) }}</title>
+                </circle>
+
+                <!-- Peak point glowing dot -->
+                <circle :cx="indicatorsChartPoints.peakPoint.x" :cy="indicatorsChartPoints.peakPoint.y" r="8" fill="#a855f7" filter="url(#glow-filter)" />
+                <circle :cx="indicatorsChartPoints.peakPoint.x" :cy="indicatorsChartPoints.peakPoint.y" r="4" fill="#ffffff" />
+              </svg>
+            </div>
+
+            <!-- Bottom summary inside indicators card -->
+            <div class="indicators-bottom-row">
+              <div class="indicators-btc-val">
+                <span class="btc-label">Saldo Acumulado ({{ formatar(accounts.saldoTotal) }})</span>
+                <h4 class="btc-amount">{{ (accounts.saldoTotal / 350000).toFixed(5) }} BTC</h4>
+              </div>
+              <div class="indicators-pct-badge">
+                <span class="pct-val">+2.8%</span>
+                <span class="pct-arrow-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: Connections & Insights -->
+        <div class="dashboard-row">
+          
+          <!-- My Connections Card -->
+          <div class="dashboard-card my-connections-card">
+            <div class="card-header">
+              <h3 class="card-title">Metas e Limites</h3>
+              <button class="card-menu-btn" @click="modalAlertas=true">&bull;&bull;&bull;</button>
+            </div>
+            
+            <div class="connections-body">
+              <div class="connection-item">
+                <div class="conn-meta">
+                  <span class="conn-label">Consumo de Orçamentos</span>
+                  <span class="conn-pct">{{ connectionsMetrics.budgetPct }}%</span>
+                </div>
+                <div class="segmented-progress-bar">
+                  <div v-for="step in 5" :key="step" class="progress-segment" :class="{filled: (connectionsMetrics.budgetPct >= step * 20)}"></div>
+                </div>
+              </div>
+              
+              <div class="connection-item">
+                <div class="conn-meta">
+                  <span class="conn-label">Dívidas Quitadas</span>
+                  <span class="conn-pct">{{ connectionsMetrics.billsPct }}%</span>
+                </div>
+                <div class="segmented-progress-bar">
+                  <div v-for="step in 5" :key="step" class="progress-segment" :class="{filled: (connectionsMetrics.billsPct >= step * 20)}"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Insights Mini Cards -->
+          <div class="insights-grid-col">
+            
+            <!-- Insight Item 1: Stock (Itens) -->
+            <div class="insight-mini-card">
+              <div class="insight-top">
+                <div class="insight-icon-container">
+                  <svg class="insight-spark-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#a855f7" stroke-width="2.5">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                </div>
+                <button @click="aba='investimentos'" class="insight-action-btn">Visualizar <span class="arrow">&gt;</span></button>
+              </div>
+              <div class="insight-bottom">
+                <span class="insight-label">Itens no Estoque</span>
+                <h4 class="insight-value">{{ formatar(items.itens.filter(i=>i.status==='disponivel').reduce((a,c)=>a+Number(c.valor), 0)) }}</h4>
+                <p class="insight-trend positive">&uparrow; 37.8% esta semana</p>
+              </div>
+              
+              <svg class="insight-sparkline-bg" viewBox="0 0 100 30" preserveAspectRatio="none">
+                <path d="M -2 25 Q 20 10 40 20 T 80 5 T 102 15" fill="none" stroke="rgba(168,85,247,0.35)" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+
+            <!-- Insight Item 2: Bills (Dívidas) -->
+            <div class="insight-mini-card">
+              <div class="insight-top">
+                <div class="insight-icon-container">
+                  <svg class="insight-spark-svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#a855f7" stroke-width="2.5">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                </div>
+                <button @click="aba='dividas'" class="insight-action-btn">Visualizar <span class="arrow">&gt;</span></button>
+              </div>
+              <div class="insight-bottom">
+                <span class="insight-label">Dívidas Pendentes</span>
+                <h4 class="insight-value">{{ formatar(billsStore.bills.filter(b => !b.pagaEsteMes).reduce((a,c)=>a+Number(c.valor), 0)) }}</h4>
+                <p class="insight-trend neutral">{{ billsStore.bills.filter(b => !b.pagaEsteMes).length }} pendentes este mês</p>
+              </div>
+              
+              <svg class="insight-sparkline-bg" viewBox="0 0 100 30" preserveAspectRatio="none">
+                <path d="M -2 20 Q 20 5 40 15 T 80 25 T 102 5" fill="none" stroke="rgba(168,85,247,0.35)" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: Radar de Dívidas -->
+        <div class="dashboard-row" style="margin-top: 1.5rem;">
+          <div class="dashboard-card dividas-overview-card" style="grid-column: 1 / -1;">
+            <div class="card-header">
+              <h3 class="card-title">📡 Radar de Dívidas & Compromissos</h3>
+              <button class="ios-pill-btn blue" @click="aba='dividas'">Gerenciar Dívidas &rarr;</button>
+            </div>
+            
+            <div class="dividas-overview-body">
+              <!-- Seção Principal: Este Mês -->
+              <div class="overview-section">
+                <span class="section-subtitle">Este Mês</span>
+                <div class="overview-main-stat">
+                  <div class="stat-group">
+                    <span class="stat-label">Pendentes</span>
+                    <h4 class="stat-value text-red">{{ formatar(dividasOverview.pendentesValor) }}</h4>
+                    <p class="stat-subtext">{{ dividasOverview.pendentesCount }} contas a pagar</p>
+                  </div>
+                  
+                  <div class="stat-group">
+                    <span class="stat-label">Assinaturas</span>
+                    <h4 class="stat-value text-purple">{{ formatar(dividasOverview.recorrentesValor) }}</h4>
+                    <p class="stat-subtext">{{ dividasOverview.recorrentesCount }} recorrentes ativas</p>
+                  </div>
+                </div>
+
+                <!-- Saldo Projetado -->
+                <div class="projected-balance-banner" :class="{ warning: accounts.saldoTotal < dividasOverview.pendentesValor }">
+                  <div class="banner-icon">💡</div>
+                  <div class="banner-text">
+                    <p class="banner-title">Projeção Pós-Pagamentos</p>
+                    <p class="banner-desc">
+                      Seu saldo estimado após quitar as pendências será de 
+                      <strong :style="{ color: accounts.saldoTotal - dividasOverview.pendentesValor < 0 ? 'var(--red)' : 'var(--green)' }">
+                        {{ formatar(accounts.saldoTotal - dividasOverview.pendentesValor) }}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Seção Central: Alertas & Avisos -->
+              <div class="overview-section alerts-section">
+                <span class="section-subtitle">Alertas & Prazos</span>
+                
+                <!-- Alerta: Contas Vencidas -->
+                <div v-if="dividasOverview.vencidasCount > 0" class="alert-box danger">
+                  <span class="alert-icon">⚠️</span>
+                  <div class="alert-content">
+                    <p class="alert-title">{{ dividasOverview.vencidasCount }} {{ dividasOverview.vencidasCount === 1 ? 'conta vencida!' : 'contas vencidas!' }}</p>
+                    <p class="alert-desc">
+                      Pague logo para evitar juros/multas:
+                      <strong>{{ dividasOverview.vencidasList.map(b => `${b.descricao} (dia ${b.diaVencimento})`).join(', ') }}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Alerta: Vencimento Próximo -->
+                <div v-if="dividasOverview.vencendoLogoCount > 0" class="alert-box warning">
+                  <span class="alert-icon">⏰</span>
+                  <div class="alert-content">
+                    <p class="alert-title">Vencendo nos próximos 3 dias</p>
+                    <p class="alert-desc">
+                      Prepare o saldo para: 
+                      <strong>{{ dividasOverview.vencendoLogoList.map(b => `${b.descricao} (dia ${b.diaVencimento})`).join(', ') }}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Estado: Tudo Limpo -->
+                <div v-if="dividasOverview.vencidasCount === 0 && dividasOverview.vencendoLogoCount === 0" class="alert-box success">
+                  <span class="alert-icon">✨</span>
+                  <div class="alert-content">
+                    <p class="alert-title">Controle em dia!</p>
+                    <p class="alert-desc">
+                      Nenhuma conta atrasada ou com vencimento próximo (3 dias).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Seção Direita: Projeção Próximo Mês -->
+              <div class="overview-section next-month-section">
+                <span class="section-subtitle">Próximo Mês</span>
+                <div class="next-month-card">
+                  <div class="next-month-header">
+                    <span class="next-month-icon">📅</span>
+                    <div>
+                      <p class="next-month-title">Projeção Futura</p>
+                      <p class="next-month-sub">Compromissos automáticos/recorrentes</p>
+                    </div>
+                  </div>
+                  <div class="next-month-body">
+                    <div class="projection-row">
+                      <span>Contas recorrentes:</span>
+                      <strong>{{ dividasOverview.proximoMesCount }}</strong>
+                    </div>
+                    <div class="projection-row">
+                      <span>Total estimado:</span>
+                      <strong class="text-blue">{{ formatar(dividasOverview.proximoMesValor) }}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Search Results -->
+        <div v-if="searchQuery.trim()" class="dashboard-search-results">
+          <div class="card-header">
+            <h3 class="card-title">Resultados de busca para "{{ searchQuery }}"</h3>
+          </div>
+          <div class="ios-widget-card" style="margin-top: 1rem;">
+            <div v-for="(t,i) in lastTransactionsSearch" :key="t.id" class="ios-tx-row" :class="{bordered:i>0}">
+              <div class="ios-tx-icon wg-purple" style="background: rgba(168,85,247,0.1); color: #c084fc;">
+                {{ emojiCat[t.categoria]||(t.tipo==='receita'?'💜':'🔴') }}
+              </div>
+              <div class="ios-tx-info">
+                <p class="ios-tx-desc">{{ t.descricao }}</p>
+                <p class="ios-muted">{{ t.Account?.banco||t.Account?.nome }} • {{ fmtData(t.data) }}</p>
+              </div>
+              <div class="ios-tx-right">
+                <p :class="t.tipo==='receita'?'wg-purple-text':'wg-red-text'" style="font-weight:800;font-size:.875rem;">
+                  {{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}
+                </p>
+              </div>
+            </div>
+            <div v-if="!lastTransactionsSearch.length" class="ios-empty-card">
+              <p>Nenhuma transação encontrada</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Contas Tab -->
+      <div v-show="aba==='contas'" class="ios-content">
+        <div class="ios-section-header"><p class="ios-section-title">🏦 Contas</p>
+          <div style="display:flex;gap:.5rem"><button @click="abrirTransferenciaStep()" class="ios-pill-btn blue">🔄 Transferir</button><button @click="modalConta=true" class="ios-pill-btn green">+ Nova</button></div>
+        </div>
+        <div v-if="accounts.contas.length" class="ios-total-banner"><p>Total consolidado</p><p class="ios-total-val">{{ formatar(accounts.saldoTotal) }}</p></div>
+        <div class="ios-cards-grid">
+          <div v-for="conta in accounts.contas" :key="conta.id" class="ios-conta-card">
+            <div class="ios-conta-top-bar" :style="{backgroundColor:conta.cor}"></div>
+            <div class="ios-conta-header">
+              <div class="ios-acc-icon lg" :style="{background:conta.cor+'18',color:conta.cor}">{{ conta.banco.charAt(0).toUpperCase() }}</div>
+              <div><p style="font-weight:700;font-size:.9rem">{{ conta.banco }}</p><p class="ios-muted">Conta bancária</p></div>
+              <button @click="confirmarDel(conta)" class="ios-del-btn">✕</button>
+            </div>
+            <p class="ios-conta-saldo" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
+            <div class="ios-conta-footer"><span>Participação</span><span>{{ accounts.saldoTotal>0?Math.round((conta.saldo/accounts.saldoTotal)*100):0 }}%</span></div>
+            <div class="ios-acc-bar full"><div :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div></div>
+          </div>
+        </div>
+        <div v-if="!accounts.contas.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">🏦</p><p>Nenhuma conta.</p><button @click="modalConta=true" class="ios-link">Adicionar →</button></div>
+      </div>
+
+      <!-- Histórico Tab -->
+      <div v-show="aba==='historico'" class="ios-content">
+        <div class="ios-segmented"><button @click="subAbaHistorico='lancamentos'" :class="{active:subAbaHistorico==='lancamentos'}">📋 Lançamentos</button><button @click="subAbaHistorico='metricas'" :class="{active:subAbaHistorico==='metricas'}">📊 Métricas</button></div>
+        <div v-show="subAbaHistorico==='lancamentos'">
+          <div class="ios-segmented sm"><button v-for="f in filtros" :key="f.val" @click="filtroAtivo=f.val" :class="{active:filtroAtivo===f.val}">{{ f.label }}</button></div>
+          <div class="ios-list-header"><span>{{ filtroAtivo==='todos'?'Todas':filtroAtivo==='receita'?'Entradas':'Saídas' }} ({{ transacoesFiltradas.length }})</span><span class="ios-list-total" :class="filtroAtivo==='despesa'?'wg-red-text':filtroAtivo==='receita'?'wg-green-text':'wg-teal-text'">{{ filtroAtivo==='todos'?formatar(balanco):filtroAtivo==='receita'?formatar(totalEntradas):formatar(totalSaidas) }}</span></div>
+          <div v-if="!transacoesFiltradas.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">📭</p><p>Nenhum lançamento</p><button @click="modalLancamento=true" class="ios-link">+ Criar</button></div>
+          <div class="ios-widget-card">
+            <div v-for="(t,i) in transacoesFiltradas" :key="t.id" class="ios-tx-row" :class="{bordered:i>0}">
+              <div class="ios-tx-icon" :class="t.tipo==='receita'?'wg-green':'wg-red'">{{ emojiCat[t.categoria]||(t.tipo==='receita'?'💚':'🔴') }}</div>
+              <div class="ios-tx-info"><p class="ios-tx-desc">{{ t.descricao }}</p><p class="ios-muted">{{ t.Account?.banco||t.Account?.nome }} • {{ fmtData(t.data) }}</p></div>
+              <div class="ios-tx-right">
+                <p :class="t.tipo==='receita'?'wg-green-text':'wg-red-text'" style="font-weight:800;font-size:.875rem">{{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}</p>
+                <div class="ios-tx-actions"><button @click="abrirEditar(t)" class="ios-sm-btn">✏️</button><button @click="tx.deletar(t.id).then(()=>mostrarToast('🗑️ Removido'))" class="ios-sm-btn danger">✕</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-show="subAbaHistorico==='metricas'" class="ios-metrics-section">
+          <div class="ios-segmented sm"><button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val" :class="{active:periodoMetricas===p.val}">{{ p.label }}</button></div>
+          <p class="ios-period-label">{{ labelPeriodo }}</p>
+          <div class="ios-summary-grid">
+            <div class="ios-widget"><div class="ios-widget-icon wg-red">⬇️</div><p class="ios-widget-label">Gasto</p><p class="ios-widget-value wg-red-text">{{ formatar(totalGastoPeriodo) }}</p></div>
+            <div class="ios-widget"><div class="ios-widget-icon wg-green">⬆️</div><p class="ios-widget-label">Recebido</p><p class="ios-widget-value wg-green-text">{{ formatar(totalRecebPeriodo) }}</p></div>
+            <div class="ios-widget"><div class="ios-widget-icon wg-teal">📈</div><p class="ios-widget-label">Economia</p><p class="ios-widget-value wg-teal-text">{{ taxaEconomia }}%</p></div>
+          </div>
+          <div class="ios-charts-row">
+            <div v-if="gastosPorCat.length" class="ios-chart-card">
+              <h4>Despesas por Categoria</h4>
+              <div class="ios-chart-wrapper">
+                <svg class="ios-donut" viewBox="0 0 100 100">
+                  <circle v-for="item in donutDespesas" :key="item.cat" cx="50" cy="50" r="45" fill="transparent" stroke-width="8" :stroke="item.cor" :stroke-dasharray="`${item.dash} ${CIRCUMFERENCE}`" :stroke-dashoffset="-item.offset" />
+                </svg>
+                <div class="ios-donut-label"><span>Despesas</span></div>
+              </div>
+              <div class="ios-chart-legend">
+                <div v-for="item in gastosPorCat" :key="item.cat" class="ios-legend-item"><span :style="{backgroundColor:item.cor}" class="ios-leg-dot"></span><span style="flex:1">{{ item.label }}</span><strong>{{ item.pct }}%</strong></div>
+              </div>
+            </div>
+            <div v-if="receitasPorCat.length" class="ios-chart-card">
+              <h4>Receitas por Categoria</h4>
+              <div class="ios-chart-wrapper">
+                <svg class="ios-donut" viewBox="0 0 100 100">
+                  <circle v-for="item in donutReceitas" :key="item.cat" cx="50" cy="50" r="45" fill="transparent" stroke-width="8" :stroke="item.cor" :stroke-dasharray="`${item.dash} ${CIRCUMFERENCE}`" :stroke-dashoffset="-item.offset" />
+                </svg>
+                <div class="ios-donut-label"><span>Receitas</span></div>
+              </div>
+              <div class="ios-chart-legend">
+                <div v-for="item in receitasPorCat" :key="item.cat" class="ios-legend-item"><span :style="{backgroundColor:item.cor}" class="ios-leg-dot"></span><span style="flex:1">{{ item.label }}</span><strong>{{ item.pct }}%</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Métricas Tab -->
+      <div v-show="aba==='metricas'" class="ios-content">
+        <div class="ios-section-header"><p class="ios-section-title">📊 Métricas & Alertas</p>
+          <button @click="modalAlertas=true" class="ios-pill-btn orange">🔔 Configurar Alertas</button>
+        </div>
+        <div class="ios-summary-grid">
+          <div class="ios-widget"><div class="ios-widget-icon wg-red">⬇️</div><p class="ios-widget-label">Gasto do Mês</p><p class="ios-widget-value wg-red-text">{{ formatar(totalSaidas) }}</p></div>
+          <div class="ios-widget"><div class="ios-widget-icon wg-green">⬆️</div><p class="ios-widget-label">Receita do Mês</p><p class="ios-widget-value wg-green-text">{{ formatar(totalEntradas) }}</p></div>
+          <div class="ios-widget"><div class="ios-widget-icon wg-teal">⚖️</div><p class="ios-widget-label">Balanço</p><p class="ios-widget-value" :class="balanco>=0?'wg-teal-text':'wg-red-text'">{{ formatar(balanco) }}</p></div>
+        </div>
+        <div v-if="budgets.budgets.length" class="ios-widget-card" style="margin-top:1.5rem">
+          <div class="ios-wc-header"><p>🚨 Status dos Alertas</p></div>
+          <div v-for="b in budgets.budgets" :key="b.id" class="ios-alert-row" style="margin-bottom:1rem">
+            <div class="ios-alert-row-icon" :class="b.gastoAtual>=b.limite?'wg-red':b.gastoAtual>=b.limite*0.7?'wg-orange':'wg-teal'">{{ emojiCat[b.categoria]||'📦' }}</div>
+            <div class="ios-alert-row-body" style="flex:1"><div class="ios-alert-row-top"><span>{{ labelCat[b.categoria] }} ({{ b.ativo?'Ativo':'Pausado' }})</span><span style="font-weight:800">{{ formatar(b.gastoAtual) }} / {{ formatar(b.limite) }}</span></div><div class="ios-progress sm"><div :class="b.gastoAtual>=b.limite?'bg-red':b.gastoAtual>=b.limite*0.7?'bg-amber':'bg-teal'" :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}"></div></div></div>
+          </div>
+        </div>
+        <div v-else class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">🔔</p><p>Nenhum alerta configurado.</p><button @click="modalAlertas=true" class="ios-link">Configurar agora →</button></div>
+      </div>
+
+      <!-- Itens Tab -->
+      <div v-show="aba==='investimentos'" class="ios-content">
+        <div class="ios-segmented"><button @click="subAbaInv='venda'" :class="{active:subAbaInv==='venda'}">📦 Itens à Venda ({{ itensVenda.length }})</button><button @click="subAbaInv='compra'" :class="{active:subAbaInv==='compra'}">🛒 Desejos ({{ itensCompra.length }})</button></div>
+        <div class="ios-section-header" style="margin-top:1.5rem">
+          <p class="ios-section-title">{{ subAbaInv==='venda'?'Estoque de Itens':'Lista de Desejos' }}</p>
+          <button @click="modalItem=true" :class="subAbaInv==='venda'?'orange':'blue'" class="ios-pill-btn">+ Novo</button>
+        </div>
+        <div class="ios-cards-grid">
+          <div v-for="item in (subAbaInv==='venda'?itensVenda:itensCompra)" :key="item.id" class="ios-conta-card item-card">
+            <div class="ios-conta-top-bar" :style="{backgroundColor:subAbaInv==='venda'?'#fb923c':'#3b82f6'}"></div>
+            <div class="ios-conta-header">
+              <span style="font-size:2rem">{{ subAbaInv==='venda'?'📦':'🛒' }}</span>
+              <div style="flex:1;margin-left:.75rem"><p style="font-weight:700;font-size:.95rem">{{ item.nome }}</p><p class="ios-muted">{{ item.descricao||'Sem descrição' }}</p></div>
+              <button @click="items.deletar(item.id).then(()=>mostrarToast('🗑️ Item removido'))" class="ios-del-btn">✕</button>
+            </div>
+            <p class="ios-conta-saldo" :style="{color:subAbaInv==='venda'?'#fb923c':'#3b82f6'}">{{ formatar(item.valor) }}</p>
+            <div v-if="subAbaInv==='venda' && item.status==='disponivel'" class="ios-item-actions" style="margin-top:1rem"><button @click="abrirVenda(item)" class="ios-btn-full bg-orange">Registrar venda</button></div>
+            <div v-else-if="item.status==='vendido'" class="ios-sold-badge">Vendida!</div>
+          </div>
+        </div>
+        <div v-if="!(subAbaInv==='venda'?itensVenda:itensCompra).length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">📦</p><p>Nenhum item adicionado.</p><button @click="modalItem=true" class="ios-link">Adicionar item →</button></div>
+      </div>
+
+      <!-- Dívidas Tab -->
+      <div v-show="aba==='dividas'" class="ios-content">
+        <div class="ios-segmented">
+          <button @click="subAbaDivida='todas'" :class="{active:subAbaDivida==='todas'}">🗂️ Todas ({{ billsStore.bills.length }})</button>
+          <button @click="subAbaDivida='pendentes'" :class="{active:subAbaDivida==='pendentes'}">⏳ Pendentes ({{ billsStore.bills.filter(b => !b.pagaEsteMes).length }})</button>
+          <button @click="subAbaDivida='pagas'" :class="{active:subAbaDivida==='pagas'}">✅ Quitadas ({{ billsStore.bills.filter(b => b.pagaEsteMes).length }})</button>
+        </div>
+        
+        <div class="ios-section-header" style="margin-top:1.5rem">
+          <p class="ios-section-title">Controle de Dívidas</p>
+          <button @click="abrirNovaDivida" class="ios-pill-btn red">+ Nova Dívida</button>
+        </div>
+
+        <div class="ios-cards-grid">
+          <div v-for="bill in dividasExibidas" :key="bill.id" class="ios-conta-card item-card bill-card" :class="{ 'bill-paid': bill.pagaEsteMes }">
+            <div class="ios-conta-top-bar" :style="{ backgroundColor: bill.pagaEsteMes ? '#10b981' : '#ef4444' }"></div>
+            <div class="ios-conta-header">
+              <span style="font-size:1.75rem">{{ bill.pagaEsteMes ? '✅' : '💸' }}</span>
+              <div style="flex:1;margin-left:.75rem">
+                <p style="font-weight:700;font-size:.95rem">{{ bill.descricao }}</p>
+                <p class="ios-muted">
+                  Vence dia {{ bill.diaVencimento }} • 
+                  {{ bill.tipo === 'unica' ? 'Única' : `Recorrente (${bill.recorrencia === 'mensal' ? 'Mensal' : 'Semanal'})` }}
+                </p>
+              </div>
+              <button @click="abrirEditarDivida(bill)" class="ios-edit-btn" style="margin-right: 0.5rem; background: transparent; border: none; color: #a855f7; cursor: pointer; padding: 2px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              </button>
+              <button @click="deletarDivida(bill.id)" class="ios-del-btn">✕</button>
+            </div>
+            <p class="ios-conta-saldo" :style="{ color: bill.pagaEsteMes ? '#10b981' : '#ef4444' }">{{ formatar(bill.valor) }}</p>
+            
+            <div class="ios-item-actions" style="margin-top:1rem">
+              <div v-if="bill.pagaEsteMes" class="bill-paid-badge-container">
+                <span class="ios-sold-badge" style="background: rgba(16, 185, 129, 0.1); color: #34d399; margin: 0; text-align: center; width: 100%;">Paga este mês!</span>
+                <button @click="estornarDivida(bill)" class="ios-btn-full" style="margin-top: 0.5rem; background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2);">Estornar Pagamento</button>
+              </div>
+              <button v-else @click="abrirPagarDivida(bill)" class="ios-btn-full bg-red" style="background-color: #ef4444; color: white;">Pagar Dívida</button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="!dividasExibidas.length" class="ios-empty-card">
+          <p style="font-size:2rem;margin-bottom:.5rem">💸</p>
+          <p>Nenhuma dívida nesta categoria.</p>
+          <button @click="abrirNovaDivida" class="ios-link">Adicionar dívida →</button>
+        </div>
+      </div>
+    </main>
+  </div>
+  
+  <!-- Responsive Mobile Navigation (Matching sidebar icons) -->
+  <nav class="ios-mobile-nav">
+    <button v-for="item in sidebarItems" :key="item.val" @click.prevent="aba=item.val" :class="{active:aba===item.val}" class="ios-mobile-tab">
+      <span class="ios-mobile-icon" v-html="item.svg"></span>
+      <span class="ios-mobile-label">{{ item.label }}</span>
     </button>
   </nav>
-
-  <div class="ios-header-right">
-    <div class="ios-user-badge">
-      <div class="ios-avatar">{{ auth.nome?.charAt(0).toUpperCase() }}</div>
-      <span class="ios-greeting" style="display: none;">Olá, <strong>{{ auth.nome?.split(' ')[0] }}</strong></span>
-    </div>
-    <button @click="modalAlertas=true" class="ios-hdr-btn">🔔</button>
-    <button @click="auth.logout()" class="ios-hdr-btn ios-hdr-btn-danger">✕</button>
-  </div>
-</header>
-
-<main class="ios-main">
-<div v-show="aba==='inicio'" class="ios-content">
-
-  <div class="ios-balance-card">
-    <div class="ios-balance-inner">
-      <div class="ios-balance-top">
-        <div><p class="ios-balance-label">Saldo Total</p><p class="ios-balance-sub">{{ accounts.contas.length }} conta(s)</p></div>
-        <div class="ios-balance-badge">📅 {{ mesAtual }}</div>
-      </div>
-      <h2 class="ios-balance-value" :class="{up:saldoAnimando==='up',down:saldoAnimando==='down'}">{{ formatar(saldoExibido) }}</h2>
-      <Transition name="ios-diff"><div v-if="diffVisivel" class="ios-balance-diff" :class="diffValor>=0?'pos':'neg'">{{ diffValor>=0?'+':'' }}{{ formatar(diffValor) }}</div></Transition>
-      <div class="ios-balance-bar"><div class="ios-balance-bar-fill" :class="pctEntradas>50?'good':'warn'" :style="{width:pctEntradas+'%'}"></div></div>
-      <div class="ios-balance-row"><span>⬆ {{ formatar(totalEntradas) }}</span><span>⬇ {{ formatar(totalSaidas) }}</span></div>
-    </div>
-  </div>
-
-  <div class="ios-quick-grid">
-    <button @click="modalLancamento=true;passoLancamento=1" class="ios-quick-btn"><span class="ios-quick-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><span>Lançar</span></button>
-    <button @click="abrirTransferenciaStep()" class="ios-quick-btn"><span class="ios-quick-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg></span><span>Transferir</span></button>
-    <button @click="modalAlertas=true" class="ios-quick-btn"><span class="ios-quick-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span><span>Alertas</span></button>
-    <button @click="modalConta=true" class="ios-quick-btn"><span class="ios-quick-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg></span><span>Conta</span></button>
-  </div>
-
-  <div class="ios-summary-grid">
-    <div class="ios-widget" @click="aba='historico';filtroAtivo='receita'">
-      <div class="ios-widget-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></div><p class="ios-widget-label">Entradas</p><p class="ios-widget-value wg-green-text">{{ formatar(totalEntradas) }}</p>
-    </div>
-    <div class="ios-widget" @click="aba='historico';filtroAtivo='despesa'">
-      <div class="ios-widget-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10"/><path d="M17 7v10H7"/></svg></div><p class="ios-widget-label">Saídas</p><p class="ios-widget-value wg-red-text">{{ formatar(totalSaidas) }}</p>
-    </div>
-    <div class="ios-widget">
-      <div class="ios-widget-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></div><p class="ios-widget-label">Balanço</p><p class="ios-widget-value" :class="balanco>=0?'wg-teal-text':'wg-red-text'">{{ formatar(balanco) }}</p>
-    </div>
-  </div>
-
-  <div v-if="accounts.contas.length" class="ios-widget-card">
-    <div class="ios-wc-header"><p>🏦 Minhas Contas</p><button @click="aba='contas'" class="ios-link">Ver todas →</button></div>
-    <div v-for="conta in accounts.contas" :key="conta.id" class="ios-account-row">
-      <div class="ios-acc-icon" :style="{background:conta.cor+'18',color:conta.cor}">{{ conta.banco.charAt(0).toUpperCase() }}</div>
-      <div class="ios-acc-info"><p class="ios-acc-name">{{ conta.banco }}</p><div class="ios-acc-bar"><div :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div></div></div>
-      <p class="ios-acc-val" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
-    </div>
-  </div>
-  <div v-else class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">🏦</p><p>Nenhuma conta ainda</p><button @click="modalConta=true" class="ios-link">+ Adicionar conta</button></div>
-
-  <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual>=b.limite)" :key="'al-'+b.id" class="ios-alert-card ios-alert-danger">
-    <div class="ios-alert-icon">{{ emojiCat[b.categoria]||'⚠️' }}</div>
-    <div class="ios-alert-body"><p class="ios-alert-title">🚨 Limite ultrapassado!</p><p class="ios-alert-sub">{{ labelCat[b.categoria] }}: <strong>{{ formatar(b.gastoAtual) }}</strong> de {{ formatar(b.limite) }}</p>
-      <div class="ios-alert-bar"><div :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}" class="bg-red"></div></div></div>
-  </div>
-  <div v-for="b in budgets.budgets.filter(b=>b.ativo && b.gastoAtual>=b.limite*0.7 && b.gastoAtual<b.limite)" :key="'av-'+b.id" class="ios-alert-card ios-alert-warn">
-    <div class="ios-alert-icon">{{ emojiCat[b.categoria]||'⚠️' }}</div>
-    <div class="ios-alert-body"><p class="ios-alert-title">⚠️ Atenção!</p><p class="ios-alert-sub">{{ labelCat[b.categoria] }}: <strong>{{ formatar(b.gastoAtual) }}</strong> de {{ formatar(b.limite) }} ({{ Math.round((b.gastoAtual/b.limite)*100) }}%)</p>
-      <div class="ios-alert-bar"><div :style="{width:Math.min((b.gastoAtual/b.limite)*100,100)+'%'}" class="bg-amber"></div></div></div>
-  </div>
-
-  <div v-if="items.itens.filter(i=>i.status==='disponivel').length" class="ios-widget-card">
-    <div class="ios-wc-header"><p>📦 À venda</p><button @click="aba='investimentos'" class="ios-link">Ver tudo →</button></div>
-    <div v-for="item in items.itens.filter(i=>i.status==='disponivel').slice(0,3)" :key="item.id" class="ios-account-row">
-      <span style="font-size:1.2rem">📦</span>
-      <p style="flex:1;font-size:.875rem;font-weight:500">{{ item.nome }}</p>
-      <p class="wg-orange-text" style="font-weight:800;font-size:.875rem">{{ formatar(item.valor) }}</p>
-      <button @click="abrirVenda(item)" class="ios-pill-btn">Vender</button>
-    </div>
-  </div>
 </div>
-
-<div v-show="aba==='contas'" class="ios-content">
-  <div class="ios-section-header"><p class="ios-section-title">🏦 Contas</p>
-    <div style="display:flex;gap:.5rem"><button @click="abrirTransferenciaStep()" class="ios-pill-btn blue">🔄 Transferir</button><button @click="modalConta=true" class="ios-pill-btn green">+ Nova</button></div>
-  </div>
-  <div v-if="accounts.contas.length" class="ios-total-banner"><p>Total consolidado</p><p class="ios-total-val">{{ formatar(accounts.saldoTotal) }}</p></div>
-  <div class="ios-cards-grid">
-    <div v-for="conta in accounts.contas" :key="conta.id" class="ios-conta-card">
-      <div class="ios-conta-top-bar" :style="{backgroundColor:conta.cor}"></div>
-      <div class="ios-conta-header">
-        <div class="ios-acc-icon lg" :style="{background:conta.cor+'18',color:conta.cor}">{{ conta.banco.charAt(0).toUpperCase() }}</div>
-        <div><p style="font-weight:700;font-size:.9rem">{{ conta.banco }}</p><p class="ios-muted">Conta bancária</p></div>
-        <button @click="confirmarDel(conta)" class="ios-del-btn">✕</button>
-      </div>
-      <p class="ios-conta-saldo" :style="{color:conta.cor}">{{ formatar(conta.saldo) }}</p>
-      <div class="ios-conta-footer"><span>Participação</span><span>{{ accounts.saldoTotal>0?Math.round((conta.saldo/accounts.saldoTotal)*100):0 }}%</span></div>
-      <div class="ios-acc-bar full"><div :style="{width:(accounts.saldoTotal>0?(conta.saldo/accounts.saldoTotal)*100:0)+'%',backgroundColor:conta.cor}"></div></div>
-    </div>
-  </div>
-  <div v-if="!accounts.contas.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">🏦</p><p>Nenhuma conta.</p><button @click="modalConta=true" class="ios-link">Adicionar →</button></div>
-</div>
-
-<div v-show="aba==='historico'" class="ios-content">
-  <div class="ios-segmented"><button @click="subAbaHistorico='lancamentos'" :class="{active:subAbaHistorico==='lancamentos'}">📋 Lançamentos</button><button @click="subAbaHistorico='metricas'" :class="{active:subAbaHistorico==='metricas'}">📊 Métricas</button></div>
-  <div v-show="subAbaHistorico==='lancamentos'">
-    <div class="ios-segmented sm"><button v-for="f in filtros" :key="f.val" @click="filtroAtivo=f.val" :class="{active:filtroAtivo===f.val}">{{ f.label }}</button></div>
-    <div class="ios-list-header"><span>{{ filtroAtivo==='todos'?'Todas':filtroAtivo==='receita'?'Entradas':'Saídas' }} ({{ transacoesFiltradas.length }})</span><span class="ios-list-total" :class="filtroAtivo==='despesa'?'wg-red-text':filtroAtivo==='receita'?'wg-green-text':'wg-teal-text'">{{ filtroAtivo==='todos'?formatar(balanco):filtroAtivo==='receita'?formatar(totalEntradas):formatar(totalSaidas) }}</span></div>
-    <div v-if="!transacoesFiltradas.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">📭</p><p>Nenhum lançamento</p><button @click="modalLancamento=true" class="ios-link">+ Criar</button></div>
-    <div class="ios-widget-card">
-      <div v-for="(t,i) in transacoesFiltradas" :key="t.id" class="ios-tx-row" :class="{bordered:i>0}">
-        <div class="ios-tx-icon" :class="t.tipo==='receita'?'wg-green':'wg-red'">{{ emojiCat[t.categoria]||(t.tipo==='receita'?'💚':'🔴') }}</div>
-        <div class="ios-tx-info"><p class="ios-tx-desc">{{ t.descricao }}</p><p class="ios-muted">{{ t.Account?.banco||t.Account?.nome }} • {{ fmtData(t.data) }}</p></div>
-        <div class="ios-tx-right">
-          <p :class="t.tipo==='receita'?'wg-green-text':'wg-red-text'" style="font-weight:800;font-size:.875rem">{{ t.tipo==='receita'?'+':'-' }}{{ formatar(t.valor) }}</p>
-          <div class="ios-tx-actions"><button @click="abrirEditar(t)" class="ios-sm-btn">✏️</button><button @click="tx.deletar(t.id).then(()=>mostrarToast('🗑️ Removido'))" class="ios-sm-btn danger">✕</button></div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div v-show="subAbaHistorico==='metricas'" class="ios-metrics-section">
-    <div class="ios-segmented sm"><button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val" :class="{active:periodoMetricas===p.val}">{{ p.label }}</button></div>
-    <p class="ios-period-label">{{ labelPeriodo }}</p>
-    <div class="ios-summary-grid">
-      <div class="ios-widget"><div class="ios-widget-icon wg-red">⬇️</div><p class="ios-widget-label">Gasto</p><p class="ios-widget-value wg-red-text">{{ formatar(totalGastoPeriodo) }}</p></div>
-      <div class="ios-widget"><div class="ios-widget-icon wg-green">⬆️</div><p class="ios-widget-label">Recebido</p><p class="ios-widget-value wg-green-text">{{ formatar(totalRecebPeriodo) }}</p></div>
-      <div class="ios-widget"><div class="ios-widget-icon wg-purple">💹</div><p class="ios-widget-label">Economia</p><p class="ios-widget-value wg-purple-text">{{ taxaEconomia }}%</p></div>
-    </div>
-    <div v-if="gastosPorCat.length" class="ios-widget-card">
-      <p class="ios-wc-title">⬇️ Gastos por categoria</p>
-      <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="14"/><circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="14" :stroke-dasharray="(seg.dash-2)+' '+(CIRCUMFERENCE-seg.dash+2)" :stroke-dashoffset="-(seg.offset)" style="transition:all .6s ease"/></svg><div class="ios-donut-center"><p class="ios-muted">Total</p><p style="font-weight:800;font-size:.75rem">{{ formatar(totalGastoPeriodo) }}</p></div></div>
-        <div class="ios-donut-legend"><div v-for="item in gastosPorCat.slice(0,5)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct" :style="{color:item.cor}">{{ item.pct }}%</span></div></div>
-      </div>
-      <div class="ios-cat-bars"><div v-for="item in gastosPorCat" :key="item.cat" class="ios-cat-bar-item"><div class="ios-cat-bar-header"><span>{{ item.emoji }} {{ item.label }}</span><span class="ios-muted">{{ formatar(item.valor) }} · <strong :style="{color:item.cor}">{{ item.pct }}%</strong></span></div><div class="ios-progress"><div :style="{width:item.pct+'%',background:item.cor}"></div></div></div></div>
-    </div>
-    <div v-if="receitasPorCat.length" class="ios-widget-card">
-      <p class="ios-wc-title">⬆️ Receitas por categoria</p>
-      <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="14"/><circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="14" :stroke-dasharray="(seg.dash-2)+' '+(CIRCUMFERENCE-seg.dash+2)" :stroke-dashoffset="-(seg.offset)" style="transition:all .6s ease"/></svg><div class="ios-donut-center"><p class="ios-muted">Total</p><p style="font-weight:800;font-size:.75rem">{{ formatar(totalRecebPeriodo) }}</p></div></div>
-        <div class="ios-donut-legend"><div v-for="item in receitasPorCat.slice(0,5)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct" :style="{color:item.cor}">{{ item.pct }}%</span></div></div>
-      </div>
-    </div>
-    <div v-if="!txPeriodo.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">📊</p><p>Sem dados neste período</p></div>
-  </div>
-</div>
-
-<div v-show="aba==='metricas'" class="ios-content">
-  <div class="ios-segmented sm"><button v-for="p in periodos" :key="p.val" @click="periodoMetricas=p.val" :class="{active:periodoMetricas===p.val}">{{ p.label }}</button></div>
-  <div class="ios-summary-grid">
-    <div class="ios-widget"><p class="ios-widget-label">Receitas</p><p class="ios-widget-value wg-green-text">{{ formatar(totalRecebPeriodo) }}</p></div>
-    <div class="ios-widget"><p class="ios-widget-label">Despesas</p><p class="ios-widget-value wg-red-text">{{ formatar(totalGastoPeriodo) }}</p></div>
-    <div class="ios-widget"><p class="ios-widget-label">Economia</p><p class="ios-widget-value wg-purple-text">{{ taxaEconomia }}%</p></div>
-  </div>
-  <div v-if="gastosPorCat.length" class="ios-widget-card">
-    <p class="ios-wc-title">Despesas por categoria</p>
-    <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" width="120" height="120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle v-for="(seg,i) in donutDespesas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="18" :stroke-dasharray="seg.dash+' '+(CIRCUMFERENCE-seg.dash)" :stroke-dashoffset="CIRCUMFERENCE-seg.offset" style="transform:rotate(-90deg);transform-origin:60px 60px"/></svg></div>
-    <div class="ios-donut-legend"><div v-for="item in gastosPorCat.slice(0,4)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct">{{ item.pct }}%</span></div></div></div>
-    <div class="ios-cat-bars"><div v-for="item in gastosPorCat" :key="item.cat" class="ios-cat-bar-item"><div class="ios-cat-bar-header"><span>{{ item.emoji }} {{ item.label }}</span><span class="ios-muted">{{ formatar(item.valor) }} · {{ item.pct }}%</span></div><div class="ios-progress"><div :style="{width:item.pct+'%',background:item.cor}"></div></div></div></div>
-  </div>
-  <div v-if="receitasPorCat.length" class="ios-widget-card">
-    <p class="ios-wc-title">Receitas por categoria</p>
-    <div class="ios-donut-row"><div class="ios-donut-wrap"><svg viewBox="0 0 120 120" width="120" height="120" class="ios-donut"><circle cx="60" cy="60" r="45" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle v-for="(seg,i) in donutReceitas" :key="i" cx="60" cy="60" r="45" fill="none" :stroke="seg.cor" stroke-width="18" :stroke-dasharray="seg.dash+' '+(CIRCUMFERENCE-seg.dash)" :stroke-dashoffset="CIRCUMFERENCE-seg.offset" style="transform:rotate(-90deg);transform-origin:60px 60px"/></svg></div>
-    <div class="ios-donut-legend"><div v-for="item in receitasPorCat.slice(0,4)" :key="item.cat" class="ios-legend-item"><span class="ios-legend-dot" :style="{background:item.cor}"></span><span class="ios-legend-label">{{ item.label }}</span><span class="ios-legend-pct">{{ item.pct }}%</span></div></div></div>
-  </div>
-  <div v-if="!txPeriodo.length" class="ios-empty-card"><p style="font-size:2rem;margin-bottom:.5rem">📊</p><p>Nenhuma transação neste período</p></div>
-</div>
-
-<div v-show="aba==='investimentos'" class="ios-content">
-  <div class="ios-section-header">
-    <p class="ios-section-title">📦 Itens</p>
-    <div style="display:flex;gap:.5rem">
-      <button @click="modalItem=true;subAbaInv='compra'" class="ios-pill-btn blue">🛒 Comprar</button>
-      <button @click="modalItem=true;subAbaInv='venda'" class="ios-pill-btn orange">+ Novo Item</button>
-    </div>
-  </div>
-
-  <div class="ios-segmented">
-    <button @click="subAbaInv='venda'" :class="{active:subAbaInv==='venda'}">📦 À Venda</button>
-    <button @click="subAbaInv='compra'" :class="{active:subAbaInv==='compra'}">🛒 Comprados</button>
-  </div>
-
-  <div v-show="subAbaInv==='venda'">
-    <div v-if="!itensVenda.length" class="ios-empty-card">
-      <p style="font-size:2rem;margin-bottom:.5rem">📦</p>
-      <p>Nenhum item à venda</p>
-    </div>
-    <div v-else class="ios-widget-card">
-      <div v-for="(item, i) in itensVenda" :key="item.id" class="ios-tx-row" :class="{bordered:i>0}">
-        <div class="ios-tx-icon wg-orange">📦</div>
-        <div class="ios-tx-info">
-          <p class="ios-tx-desc">{{ item.nome }}</p>
-          <p class="ios-muted">{{ item.descricao || 'Sem descrição' }}</p>
-        </div>
-        <div class="ios-tx-right">
-          <p class="wg-orange-text" style="font-weight:800;font-size:.875rem">{{ formatar(item.valor) }}</p>
-          <div class="ios-tx-actions" v-if="item.status==='disponivel'">
-            <button @click="abrirVenda(item)" class="ios-pill-btn">Vender</button>
-          </div>
-          <p v-else class="ios-muted" style="font-size: 0.75rem;">Vendido</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div v-show="subAbaInv==='compra'">
-    <div v-if="!itensCompra.length" class="ios-empty-card">
-      <p style="font-size:2rem;margin-bottom:.5rem">🛒</p>
-      <p>Nenhuma compra registrada</p>
-    </div>
-    <div v-else class="ios-widget-card">
-      <div v-for="(item, i) in itensCompra" :key="item.id" class="ios-tx-row" :class="{bordered:i>0}">
-        <div class="ios-tx-icon wg-blue">🛒</div>
-        <div class="ios-tx-info">
-          <p class="ios-tx-desc">{{ item.nome }}</p>
-          <p class="ios-muted">{{ item.descricao || 'Sem descrição' }}</p>
-        </div>
-        <div class="ios-tx-right">
-          <p class="wg-blue-text" style="font-weight:800;font-size:.875rem">{{ formatar(item.valor) }}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-</main>
-
-<nav class="ios-bottomnav">
-  <div class="ios-bottomnav-inner">
-    <button @click="aba='inicio'" :class="{active:aba==='inicio'}" class="ios-tab-btn"><span class="ios-tab-icon">🏠</span><span class="ios-tab-label">Início</span></button>
-    <button @click="aba='contas'" :class="{active:aba==='contas'}" class="ios-tab-btn"><span class="ios-tab-icon">🏦</span><span class="ios-tab-label">Contas</span></button>
-    <button @click="modalLancamento=true;passoLancamento=1" class="ios-fab"><div class="ios-fab-inner">⚡</div><span class="ios-tab-label active">Lançar</span></button>
-    <button @click="aba='historico'" :class="{active:aba==='historico'}" class="ios-tab-btn"><span class="ios-tab-icon">📋</span><span class="ios-tab-label">Histórico</span></button>
-    <button @click="aba='metricas'" :class="{active:aba==='metricas'}" class="ios-tab-btn"><span class="ios-tab-icon">📊</span><span class="ios-tab-label">Métricas</span></button>
-  </div>
-</nav>
 
 <!-- MODAL LANÇAMENTO -->
 <Teleport to="body"><Transition name="ios-modal">
 <div v-if="modalLancamento" class="ios-modal-bg" @click.self="fecharLancamentoStep">
 <div class="ios-modal-card">
   <div class="ios-modal-header">
-    <button v-if="passoLancamento>1" @click="passoLancamento--" class="ios-back">‹</button>
-    <div><h3>⚡ Lançamento Rápido</h3><p class="ios-muted">Passo {{ passoLancamento }} de {{ accounts.contas.length>1?4:3 }}</p></div>
+    <div style="display:flex;align-items:center;gap:.5rem"><span style="font-size:1.2rem">✏️</span> <h3>Novo Lançamento</h3></div>
     <button @click="fecharLancamentoStep" class="ios-close">✕</button>
   </div>
-  <div class="ios-modal-progress"><div :class="formTx.tipo==='receita'?'bg-green':'bg-red'" :style="{width:(passoLancamento/(accounts.contas.length>1?4:3)*100)+'%'}"></div></div>
+  
   <div class="ios-modal-body">
-    <Transition name="ios-step" mode="out-in">
-    <div v-if="passoLancamento===1" key="p1" class="ios-step">
-      <p class="ios-step-title">O que deseja registrar?</p>
-      <button @click="selecionarTipoLancamento('receita')" class="ios-option-btn green"><div class="ios-option-icon">⬆️</div><div><p class="ios-option-title">Entrada</p><p class="ios-muted">Salário, freelance, presente...</p></div><span class="ios-chevron">›</span></button>
-      <button @click="selecionarTipoLancamento('despesa')" class="ios-option-btn red"><div class="ios-option-icon">⬇️</div><div><p class="ios-option-title">Saída</p><p class="ios-muted">Mercado, contas, lazer...</p></div><span class="ios-chevron">›</span></button>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in">
-    <div v-if="passoLancamento===2" key="p2" class="ios-step">
-      <p class="ios-step-title">{{ formTx.tipo==='receita'?'Categoria da entrada':'Categoria da saída' }}</p>
-      <div class="ios-cat-grid"><button v-for="cat in categoriasAtuais" :key="cat.id" @click="selecionarCategoriaStep(cat.id)" :class="{active:formTx.categoria===cat.id}" class="ios-cat-btn"><span class="ios-cat-emoji">{{ cat.emoji }}</span><span>{{ cat.label }}</span></button></div>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in">
-    <div v-if="passoLancamento===3" key="p3" class="ios-step">
-      <div class="ios-context-bar"><span>{{ emojiCat[formTx.categoria] }}</span><div><p class="ios-muted">{{ labelCat[formTx.categoria] }}</p><p :class="formTx.tipo==='receita'?'wg-green-text':'wg-red-text'" style="font-size:.7rem">{{ formTx.tipo==='receita'?'⬆️ Entrada':'⬇️ Saída' }}</p></div></div>
-      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValor" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
-      <div class="ios-chips"><button v-for="v in valoresRapidos.slice(4)" :key="v.val" @click="setValorRapido(v.val)" class="ios-chip">{{ v.label }}</button></div>
-      <input v-model="formTx.descricao" type="text" placeholder="Descrição (opcional)" class="ios-input"/>
-      <button @click="confirmarValorLancamento" :class="formTx.tipo==='receita'?'bg-green':'bg-red'" class="ios-btn-full">{{ accounts.contas.length>1?'Próximo → Conta':'Confirmar ✓' }}</button>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in">
-    <div v-if="passoLancamento===4" key="p4" class="ios-step">
-      <p class="ios-step-title">Qual conta?</p>
-      <button v-for="c in accounts.contas" :key="c.id" @click="formTx.accountId=c.id;criarTransacaoStep()" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0).toUpperCase() }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><span class="ios-chevron">›</span></button>
-    </div></Transition>
+    <!-- Passo 1: Receita vs Despesa -->
+    <div v-if="passoLancamento===1" class="ios-step-content">
+      <p class="ios-label" style="text-align:center;margin-bottom:1rem">Selecione o tipo de lançamento</p>
+      <div class="ios-segmented-grid">
+        <button @click="selecionarTipoLancamento('receita')" class="ios-select-btn green">
+          <span style="font-size:2rem;margin-bottom:.5rem">⬆️</span>
+          <span>Receita / Entrada</span>
+        </button>
+        <button @click="selecionarTipoLancamento('despesa')" class="ios-select-btn red">
+          <span style="font-size:2rem;margin-bottom:.5rem">⬇️</span>
+          <span>Despesa / Saída</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Passo 2: Categoria -->
+    <div v-if="passoLancamento===2" class="ios-step-content">
+      <div style="display:flex;align-items:center;margin-bottom:1rem"><button @click="passoLancamento=1" class="ios-back-btn">‹ Voltar</button><p class="ios-label" style="margin:0 auto">Selecione a Categoria</p></div>
+      <div class="ios-cat-grid compact">
+        <button v-for="cat in categoriasAtuais" :key="cat.id" @click="selecionarCategoriaStep(cat.id)" :class="{active:formTx.categoria===cat.id}" class="ios-cat-btn">
+          <span class="ios-cat-emoji">{{ cat.emoji }}</span>
+          <span>{{ cat.label }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Passo 3: Valor -->
+    <div v-if="passoLancamento===3" class="ios-step-content">
+      <div style="display:flex;align-items:center;margin-bottom:1rem"><button @click="passoLancamento=2" class="ios-back-btn">‹ Voltar</button><p class="ios-label" style="margin:0 auto">Informe o Valor</p></div>
+      <div class="ios-val-preview">{{ formTx.tipo==='receita'?'+':'-' }} {{ formatar(valorLancamentoGuardado) }}</div>
+      <input ref="inputValor" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big" style="text-align:center;margin-bottom:1.5rem"/>
+      <div class="ios-keyboard-grid"><button v-for="val in valoresRapidos" :key="val.label" @click="setValorRapido(val.val)" class="ios-key-btn">{{ val.label }}</button></div>
+      <label class="ios-label" style="margin-top:1rem">Descrição (Opcional)</label>
+      <input v-model="formTx.descricao" placeholder="Descrição do lançamento..." class="ios-input" />
+      <button @click="confirmarValorLancamento" class="ios-btn-full bg-teal" style="margin-top:1.5rem">Continuar</button>
+    </div>
+
+    <!-- Passo 4: Conta -->
+    <div v-if="passoLancamento===4" class="ios-step-content">
+      <div style="display:flex;align-items:center;margin-bottom:1rem"><button @click="passoLancamento=3" class="ios-back-btn">‹ Voltar</button><p class="ios-label" style="margin:0 auto">Selecione a Conta</p></div>
+      <div class="ios-wc-header"><p>Escolha onde registrar o valor de {{ formatar(formTx.valor) }}</p></div>
+      <div class="ios-list-container">
+        <button v-for="c in accounts.contas" :key="c.id" @click="formTx.accountId=c.id;criarTransacaoStep()" class="ios-option-btn">
+          <div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0).toUpperCase() }}</div>
+          <div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div>
+          <span class="ios-chevron">›</span>
+        </button>
+      </div>
+    </div>
   </div>
 </div></div>
 </Transition></Teleport>
@@ -1241,49 +2219,102 @@ const contasOrigemTransf = computed(() =>
 <div v-if="modalTransferencia" class="ios-modal-bg" @click.self="fecharTransferenciaStep">
 <div class="ios-modal-card">
   <div class="ios-modal-header">
-    <button v-if="passoTransf>1" @click="passoTransf--;buscaUsuario='';usuariosEncontrados=[]" class="ios-back">‹</button>
-    <div><h3>🔄 Transferência</h3><p class="ios-muted">Passo {{ passoTransf }} de {{ formTransf.tipo==='propria'?4:5 }}</p></div>
+    <div style="display:flex;align-items:center;gap:.5rem"><span style="font-size:1.2rem">🔄</span> <h3>Transferência</h3></div>
     <button @click="fecharTransferenciaStep" class="ios-close">✕</button>
   </div>
-  <div class="ios-modal-progress"><div class="bg-blue" :style="{width:(passoTransf/(formTransf.tipo==='propria'?4:5)*100)+'%'}"></div></div>
+  
   <div class="ios-modal-body">
-    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===1" key="t1" class="ios-step">
-      <p class="ios-step-title">Para onde?</p>
-      <button @click="selecionarTipoTransf('propria')" :disabled="accounts.contas.length<2" class="ios-option-btn teal"><div class="ios-option-icon">🔄</div><div><p class="ios-option-title">Minha conta</p><p class="ios-muted">Entre suas contas</p></div><span class="ios-chevron">›</span></button>
-      <button @click="selecionarTipoTransf('externo')" class="ios-option-btn blue"><div class="ios-option-icon">👤</div><div><p class="ios-option-title">Outro usuário</p><p class="ios-muted">Enviar para outra pessoa</p></div><span class="ios-chevron">›</span></button>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===2&&formTransf.tipo==='propria'" key="t2p" class="ios-step">
-      <p class="ios-step-title">Conta destino</p>
-      <button v-for="c in accounts.contas" :key="c.id" @click="selecionarContaDestinoStep(c.id)" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><span class="ios-chevron">›</span></button>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===2&&formTransf.tipo==='externo'" key="t2e" class="ios-step">
-      <p class="ios-step-title">Destinatário</p>
-      <div class="ios-search-wrap"><span>🔍</span><input v-model="buscaUsuario" @input="debounceUsuarios" placeholder="Buscar nome ou e-mail..." class="ios-input"/><div v-if="buscandoUsuarios" class="ios-spinner sm"></div></div>
-      <div class="ios-user-list">
-        <button v-for="u in usuariosDestino" :key="u.id" @click="selecionarUsuarioStep(u)" class="ios-option-btn" :class="{selected:formTransf.usuarioDestinoId===u.id}"><div class="ios-user-avatar">{{ u.nome.charAt(0).toUpperCase() }}</div><div><p class="ios-option-title">{{ u.nome }}</p><p class="ios-muted">{{ u.email }}</p></div><span v-if="formTransf.usuarioDestinoId===u.id" class="wg-blue-text">✓</span><span v-else class="ios-chevron">›</span></button>
-        <p v-if="buscaUsuario.length>=2&&!buscandoUsuarios&&!usuariosDestino.length" class="ios-empty-small">Nenhum usuário encontrado</p>
+    <!-- Passo 1: Tipo de Transferência -->
+    <div v-if="passoTransf===1" class="ios-step-content">
+      <p class="ios-label" style="text-align:center;margin-bottom:1rem">Selecione o destino</p>
+      <div class="ios-segmented-grid">
+        <button @click="selecionarTipoTransf('propria')" class="ios-select-btn blue">
+          <span style="font-size:2rem;margin-bottom:.5rem">🔄</span>
+          <span>Contas Próprias</span>
+        </button>
+        <button @click="selecionarTipoTransf('externa')" class="ios-select-btn green">
+          <span style="font-size:2rem;margin-bottom:.5rem">👤</span>
+          <span>Outro Usuário</span>
+        </button>
       </div>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===3&&formTransf.tipo==='propria'" key="t3p" class="ios-step">
-      <p class="ios-step-title">Valor</p>
-      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValorTransf" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
-      <div class="ios-chips"><button v-for="v in valoresRapidosTransf" :key="v.val" @click="setValorRapidoTransf(v.val)" class="ios-chip">{{ v.label }}</button></div>
-      <button @click="confirmarValorTransf" class="ios-btn-full bg-blue">Próximo →</button>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===3&&formTransf.tipo==='externo'" key="t3e" class="ios-step">
-      <p class="ios-step-title">Conta do destinatário</p>
-      <button v-for="c in contasUsuarioDestino" :key="c.id" @click="selecionarContaExternaStep(c.id)" class="ios-option-btn" :class="{selected:formTransf.contaExternaId===c.id}"><div class="ios-acc-icon" style="background:rgba(59,130,246,.12);color:#3b82f6">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ c.nome }}</p></div><span class="ios-chevron">›</span></button>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in"><div v-if="passoTransf===4&&formTransf.tipo==='externo'" key="t4e" class="ios-step">
-      <p class="ios-step-title">Valor</p>
-      <div class="ios-input-group"><span class="ios-input-prefix">R$</span><input ref="inputValorTransf" @input="mascaraMoeda" inputmode="decimal" placeholder="0,00" class="ios-input-big"/></div>
-      <input v-model="formTransf.descricao" type="text" placeholder="Descrição (opcional)" class="ios-input"/>
-      <button @click="confirmarValorTransf" class="ios-btn-full bg-blue">Próximo →</button>
-    </div></Transition>
-    <Transition name="ios-step" mode="out-in"><div v-if="(passoTransf===4&&formTransf.tipo==='propria')||(passoTransf===5&&formTransf.tipo==='externo')" key="torigem" class="ios-step">
-      <p class="ios-step-title">De qual conta?</p>
-      <button v-for="c in contasOrigemTransf" :key="c.id" @click="formTransf.contaOrigemId=c.id;realizarTransferenciaStep()" :disabled="loadingTransferencia" class="ios-option-btn"><div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0) }}</div><div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">{{ formatar(c.saldo) }}</p></div><div v-if="loadingTransferencia&&formTransf.contaOrigemId===c.id" class="ios-spinner sm"></div><span v-else class="ios-chevron">›</span></button>
-    </div></Transition>
+    </div>
+
+    <!-- Passo 2: Origem -->
+    <div v-if="passoTransf===2" class="ios-step-content">
+      <div style="display:flex;align-items:center;margin-bottom:1rem"><button @click="passoTransf=1" class="ios-back-btn">‹ Voltar</button><p class="ios-label" style="margin:0 auto">Selecione a Origem</p></div>
+      <div class="ios-list-container">
+        <button v-for="c in accounts.contas" :key="c.id" @click="formTransf.contaOrigemId=c.id;passoTransf=3" class="ios-option-btn">
+          <div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0).toUpperCase() }}</div>
+          <div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">Saldo: {{ formatar(c.saldo) }}</p></div>
+          <span class="ios-chevron">›</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Passo 3: Destino (Própria ou Externa) -->
+    <div v-if="passoTransf===3" class="ios-step-content">
+      <div style="display:flex;align-items:center;margin-bottom:1rem"><button @click="passoTransf=2" class="ios-back-btn">‹ Voltar</button><p class="ios-label" style="margin:0 auto">Selecione o Destinatário</p></div>
+      
+      <!-- Contas Próprias -->
+      <div v-if="formTransf.tipo==='propria'" class="ios-list-container">
+        <button v-for="c in contasDestino" :key="c.id" @click="selecionarContaDestinoStep(c.id)" class="ios-option-btn">
+          <div class="ios-acc-icon" :style="{background:c.cor+'20',color:c.cor}">{{ c.banco.charAt(0).toUpperCase() }}</div>
+          <div><p class="ios-option-title">{{ c.banco }}</p><p class="ios-muted">Saldo: {{ formatar(c.saldo) }}</p></div>
+          <span class="ios-chevron">›</span>
+        </button>
+      </div>
+      
+      <!-- Usuário Externo -->
+      <div v-else>
+        <input v-model="buscaUsuario" @input="debounceUsuarios" placeholder="Nome ou e-mail do usuário..." class="ios-input" style="margin-bottom:1rem"/>
+        <div v-if="buscandoUsuarios" style="text-align:center;padding:1rem"><div class="ios-spinner sm"></div></div>
+        <div v-else class="ios-list-container">
+          <button v-for="u in usuariosDestino" :key="u.id" @click="selecionarUsuarioStep(u)" class="ios-option-btn">
+            <div class="ios-acc-icon" style="background:rgba(255,255,255,0.06)">{{ u.nome.charAt(0).toUpperCase() }}</div>
+            <div><p class="ios-option-title">{{ u.nome }}</p><p class="ios-muted">{{ u.email }}</p></div>
+            <span class="ios-chevron">›</span>
+          </button>
+          <div v-if="!usuariosDestino.length && buscaUsuario.length>=2" style="text-align:center;padding:1rem" class="ios-muted">Nenhum usuário encontrado</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Passo 4 (Somente Externa): Selecionar Conta do Destinatário -->
+    <div v-if="passoTransf===4 && formTransf.tipo==='externa'" class="ios-step-content">
+      <div style="display:flex;align-items:center;margin-bottom:1rem"><button @click="passoTransf=3" class="ios-back-btn">‹ Voltar</button><p class="ios-label" style="margin:0 auto">Selecione a Conta Destino</p></div>
+      <div class="ios-list-container">
+        <button v-for="c in contasUsuarioDestino" :key="c.id" @click="selecionarContaExternaStep(c.id)" class="ios-option-btn">
+          <div class="ios-acc-icon" style="background:rgba(255,255,255,0.06)">{{ c.banco?.charAt(0).toUpperCase() || c.nome?.charAt(0).toUpperCase() }}</div>
+          <div><p class="ios-option-title">{{ c.banco || c.nome }}</p></div>
+          <span class="ios-chevron">›</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Passo 4/5: Valor -->
+    <div v-if="(passoTransf===4 && formTransf.tipo==='propria') || (passoTransf===5 && formTransf.tipo==='externa')" class="ios-step-content">
+      <div style="display:flex;align-items:center;margin-bottom:1rem"><button @click="passoTransf--" class="ios-back-btn">‹ Voltar</button><p class="ios-label" style="margin:0 auto">Informe o Valor</p></div>
+      <input ref="inputValorTransf" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big" style="text-align:center;margin-bottom:1.5rem"/>
+      <div class="ios-keyboard-grid"><button v-for="val in valoresRapidosTransf" :key="val.label" @click="setValorRapidoTransf(val.val)" class="ios-key-btn">{{ val.label }}</button></div>
+      <label class="ios-label" style="margin-top:1rem">Mensagem / Descrição</label>
+      <input v-model="formTransf.descricao" placeholder="Descrição da transferência..." class="ios-input" />
+      <button @click="confirmarValorTransf" class="ios-btn-full bg-blue" style="margin-top:1.5rem">Avançar</button>
+    </div>
+
+    <!-- Passo Final: Revisão e Confirmação -->
+    <div v-if="(passoTransf===5 && formTransf.tipo==='propria') || (passoTransf===6 && formTransf.tipo==='externa')" class="ios-step-content">
+      <div style="display:flex;align-items:center;margin-bottom:1rem"><button @click="passoTransf--" class="ios-back-btn">‹ Voltar</button><p class="ios-label" style="margin:0 auto">Confirmar Dados</p></div>
+      <div v-if="previewTransferencia" class="ios-tx-preview-card">
+        <div class="preview-item"><span>Valor</span><strong style="font-size:1.25rem;color:#c084fc">{{ formatar(previewTransferencia.valor) }}</strong></div>
+        <div class="preview-flow">
+          <div class="flow-acc"><div class="ios-acc-icon sm" :style="{background:previewTransferencia.corOrigem+'20',color:previewTransferencia.corOrigem}">{{ previewTransferencia.nomeOrigem.charAt(0).toUpperCase() }}</div><span>{{ previewTransferencia.nomeOrigem }}</span></div>
+          <span class="flow-arrow">➔</span>
+          <div class="flow-acc"><div class="ios-acc-icon sm" :style="{background:previewTransferencia.corDestino+'20',color:previewTransferencia.corDestino}">{{ previewTransferencia.nomeDestino.charAt(0).toUpperCase() }}</div><span>{{ previewTransferencia.nomeDestino }}</span></div>
+        </div>
+        <p v-if="previewTransferencia.emailDestino" class="ios-muted" style="text-align:center;font-size:.75rem;margin-top:.5rem">Favorecido: {{ previewTransferencia.emailDestino }}</p>
+      </div>
+      <button @click="realizarTransferenciaStep" :disabled="loadingTransferencia" class="ios-btn-full bg-teal" style="margin-top:1.5rem">{{ loadingTransferencia?'Enviando...':'Confirmar e Enviar' }}</button>
+    </div>
   </div>
 </div></div>
 </Transition></Teleport>
@@ -1399,41 +2430,160 @@ const contasOrigemTransf = computed(() =>
 </div></div>
 </Transition></Teleport>
 
-</div>
+<!-- MODAL NOVA/EDITAR DIVIDA -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="modalBill" class="ios-modal-bg" @click.self="modalBill=false">
+<div class="ios-modal-card">
+  <div class="ios-modal-header">
+    <div><h3>{{ formBill.id ? '✏️ Editar Dívida' : '💸 Nova Dívida' }}</h3></div>
+    <button @click="modalBill=false" class="ios-close">✕</button>
+  </div>
+  <div class="ios-modal-body">
+    <label class="ios-label">Descrição</label>
+    <input v-model="formBill.descricao" placeholder="Ex: Aluguel, Internet, etc." class="ios-input" />
+
+    <label class="ios-label">Valor</label>
+    <input ref="inputValorBill" @input="mascaraMoeda" inputmode="numeric" placeholder="R$ 0,00" class="ios-input-big" />
+
+    <label class="ios-label">Dia de Vencimento</label>
+    <input v-model.number="formBill.diaVencimento" type="number" min="1" max="31" class="ios-input" />
+
+    <label class="ios-label">Tipo</label>
+    <div class="ios-segmented sm">
+      <button @click="formBill.tipo='unica'" :class="{active:formBill.tipo==='unica'}">Única</button>
+      <button @click="formBill.tipo='recorrente'" :class="{active:formBill.tipo==='recorrente'}">Recorrente</button>
+    </div>
+
+    <div v-if="formBill.tipo === 'recorrente'">
+      <label class="ios-label">Recorrência</label>
+      <div class="ios-chips wrap">
+        <button @click="formBill.recorrencia='indefinida'" :class="{active:formBill.recorrencia==='indefinida'}" class="ios-chip">Indefinida / Contínua</button>
+        <button @click="formBill.recorrencia='mensal'" :class="{active:formBill.recorrencia==='mensal'}" class="ios-chip">Mensal</button>
+        <button @click="formBill.recorrencia='semanal'" :class="{active:formBill.recorrencia==='semanal'}" class="ios-chip">Semanal</button>
+      </div>
+
+      <label class="ios-label" style="margin-top: 1rem">Total de Parcelas (0 para contínuo)</label>
+      <input v-model.number="formBill.totalParcelas" type="number" min="0" class="ios-input" />
+    </div>
+
+    <div class="ios-btn-row">
+      <button @click="modalBill=false" class="ios-btn-secondary">Cancelar</button>
+      <button @click="salvarDivida" :disabled="loadingBill" class="ios-btn-full bg-red">
+        {{ loadingBill ? 'Salvando...' : 'Confirmar' }}
+      </button>
+    </div>
+  </div>
+</div></div>
+</Transition></Teleport>
+
+<!-- MODAL SELECIONAR CONTA PARA PAGAR DIVIDA -->
+<Teleport to="body"><Transition name="ios-modal">
+<div v-if="billParaPagar" class="ios-modal-bg" @click.self="billParaPagar=null">
+<div class="ios-modal-card sm">
+  <div class="ios-modal-header">
+    <div><h3>🏦 Pagar Dívida</h3></div>
+    <button @click="billParaPagar=null" class="ios-close">✕</button>
+  </div>
+  <div class="ios-modal-body">
+    <p class="ios-muted" style="margin-bottom: 1rem">
+      Selecione a conta bancária para realizar o pagamento de <strong>{{ billParaPagar.descricao }}</strong> no valor de <strong>{{ formatar(billParaPagar.valor) }}</strong>.
+    </p>
+
+    <label class="ios-label">Conta de Origem</label>
+    <div class="ios-chips wrap" style="margin-bottom: 1.5rem">
+      <button v-for="c in accounts.contas" :key="c.id" @click="formPagamentoBill.accountId=c.id" :class="{active:formPagamentoBill.accountId===c.id}" class="ios-chip">
+        {{ c.banco }} ({{ formatar(c.saldo) }})
+      </button>
+    </div>
+
+    <div class="ios-btn-row">
+      <button @click="billParaPagar=null" class="ios-btn-secondary">Cancelar</button>
+      <button @click="confirmarPagamentoDivida" class="ios-btn-full bg-red">
+        Confirmar Pagamento
+      </button>
+    </div>
+  </div>
+</div></div>
+</Transition></Teleport>
 
 <!-- FINORA FLOATING BUTTON -->
 <button class="android-17-gemini-btn" @click="showFinoraChat = true">
   <span class="gemini-icon">✨</span> Fale com a Finora
 </button>
 
-<!-- FINORA CHAT MODAL -->
-<Teleport to="body"><Transition name="ios-modal">
-<div v-if="showFinoraChat" class="ios-modal-bg finora-chat-bg" @click.self="showFinoraChat = false">
-  <div class="finora-chat-wrapper">
-    <div class="finora-chat-rainbow-border"></div>
-    <div class="finora-chat-card">
-      <div class="ios-modal-header">
-        <div style="display:flex;align-items:center;gap:.5rem"><span class="gemini-icon" style="font-size:1.2rem">✨</span> <h3>Finora IA</h3></div>
-        <button @click="showFinoraChat=false" class="ios-close" style="margin-left:auto">✕</button>
+<!-- FINORA CHAT — Draggable floating window -->
+<Teleport to="body">
+<Transition name="finora-modal">
+<div
+  v-if="showFinoraChat"
+  class="finora-glass-card"
+  :class="{ thinking: finoraIsThinking, dragging: finoraDragging }"
+  :style="finoraPos.x >= 0 ? { left: finoraPos.x + 'px', top: finoraPos.y + 'px' } : {}"
+>
+
+  <!-- Top aurora glow bar -->
+  <div class="finora-aurora-bar" :class="{ active: finoraIsThinking }">
+    <div class="aurora-streak s1"></div>
+    <div class="aurora-streak s2"></div>
+    <div class="aurora-streak s3"></div>
+  </div>
+
+  <!-- Draggable header -->
+  <div
+    class="finora-header"
+    @mousedown.prevent="initFinoraPosition(); onFinoraDragStart($event)"
+    @touchstart.prevent="initFinoraPosition(); onFinoraDragStart($event)"
+  >
+    <div class="finora-header-left">
+      <div class="finora-avatar">
+        <span>✨</span>
       </div>
-      <div class="finora-chat-body">
-        <div v-for="(msg, i) in finoraMessages" :key="i" :class="['finora-msg', msg.role]">
-          <div class="msg-bubble">
-            <div v-if="msg.loading" class="finora-typing">
-              <span></span><span></span><span></span>
-            </div>
-            <div v-else v-html="formatFinoraMessage(msg.text)"></div>
-          </div>
+      <div class="finora-header-info">
+        <h3 class="finora-title">Finora</h3>
+        <span class="finora-status" :class="{ active: finoraIsThinking }">
+          {{ finoraIsThinking ? 'Pensando...' : 'Online' }}
+        </span>
+      </div>
+    </div>
+    <button @click.stop="showFinoraChat=false" class="finora-close-btn">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
+    </button>
+  </div>
+
+  <!-- Chat body -->
+  <div class="finora-chat-body">
+    <div v-for="(msg, i) in finoraMessages" :key="i" :class="['finora-msg', msg.role]">
+      <div class="finora-bubble" :class="msg.role">
+        <div v-if="msg.loading" class="finora-typing">
+          <span></span><span></span><span></span>
         </div>
-      </div>
-      <div class="finora-chat-footer">
-        <input v-model="finoraInput" @keyup.enter="sendFinoraMessage" type="text" placeholder="Pergunte sobre finanças..." class="ios-input" />
-        <button @click="sendFinoraMessage" class="ios-btn-full" style="width:auto;padding:.6rem 1rem;background:linear-gradient(135deg,#7c3aed,#a855f7)">Enviar</button>
+        <div v-else v-html="formatFinoraMessage(msg.text)"></div>
       </div>
     </div>
   </div>
+
+  <!-- Footer with animated glow -->
+  <div class="finora-footer">
+    <div class="finora-bottom-glow" :class="{ hidden: finoraIsThinking }"></div>
+    <div class="finora-input-row">
+      <input
+        v-model="finoraInput"
+        @input="onFinoraInputChange"
+        @keyup.enter="sendFinoraMessage"
+        type="text"
+        placeholder="Pergunte sobre finanças..."
+        class="finora-input"
+        :disabled="finoraIsThinking"
+      />
+      <button @click="sendFinoraMessage" class="finora-send-btn" :disabled="finoraIsThinking || !finoraInput.trim()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+
 </div>
-</Transition></Teleport>
+</Transition>
+</Teleport>
 
 </template>
 
@@ -1443,6 +2593,237 @@ const contasOrigemTransf = computed(() =>
 @keyframes neonPulse { 0%,100% { opacity: .6; } 50% { opacity: 1; } }
 @keyframes neonFloat { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-8px) scale(1.03); } }
 .ios-app { min-height: 100dvh; background-color: var(--bg); display: flex; flex-direction: column; overflow-x: hidden; transition: background 0.3s; }
+
+/* Desktop Left Sidebar */
+.sidebar-desktop { display: none; }
+@media (min-width: 1024px) {
+  .ios-app { flex-direction: row; }
+  .sidebar-desktop { display: flex; flex-direction: column; width: 80px; height: 100vh; position: fixed; top: 0; left: 0; background: var(--surface); border-right: 1px solid var(--sep); padding: 1.5rem 0; justify-content: space-between; align-items: center; z-index: 50; }
+  .app-main-wrapper { margin-left: 80px; width: calc(100% - 80px); }
+}
+
+.sidebar-logo { display: flex; align-items: center; justify-content: center; width: 100%; height: 3.5rem; }
+.hex-logo { font-size: 1.8rem; filter: drop-shadow(0 0 10px rgba(124,58,237,.5)); animation: neonFloat 4s ease-in-out infinite; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 2rem; flex: 1; align-items: center; width: 100%; }
+.sidebar-tab { display: flex; align-items: center; justify-content: center; width: 3.25rem; height: 3.25rem; border-radius: 16px; background: none; border: none; cursor: pointer; color: var(--text2); transition: all .3s cubic-bezier(.2,1,.3,1); position: relative; }
+.sidebar-tab:hover { color: #fff; background: rgba(255,255,255,.05); }
+.sidebar-tab.active { background: rgba(124,58,237,.12); color: var(--neon); border: 1px solid rgba(192,132,252,.3); box-shadow: 0 0 16px rgba(124,58,237,.2); }
+.sidebar-tab-icon { display: flex; align-items: center; justify-content: center; }
+.sidebar-footer { display: flex; flex-direction: column; align-items: center; gap: 1.25rem; width: 100%; }
+.sidebar-action-btn { display: flex; align-items: center; justify-content: center; width: 3rem; height: 3rem; border-radius: 50%; background: none; border: none; cursor: pointer; color: var(--text2); transition: all .2s; }
+.sidebar-action-btn:hover { color: #fff; background: rgba(255,255,255,.05); }
+.sidebar-action-btn.danger:hover { color: var(--red); background: rgba(244,114,182,.1); }
+
+/* Right App Main Wrapper */
+.app-main-wrapper { display: flex; flex-direction: column; flex: 1; min-height: 100vh; min-width: 0; }
+
+/* App Header */
+.app-header { height: 4.5rem; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem; background: rgba(7,3,14,.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--sep); position: sticky; top: 0; z-index: 40; }
+@media (min-width: 768px) { .app-header { padding: 0 2rem; } }
+.header-left { display: flex; align-items: center; gap: .5rem; }
+.breadcrumb-arrow { color: var(--text3); font-size: .8rem; }
+.header-view-title { font-size: 1.15rem; font-weight: 800; color: #fff; letter-spacing: -.02em; }
+.header-center-tabs { display: flex; align-items: center; gap: 1.5rem; }
+.header-wallet-tab { display: flex; align-items: center; gap: .5rem; font-size: .85rem; font-weight: 600; color: var(--text2); cursor: pointer; transition: color .2s; }
+.header-wallet-tab.active { color: #fff; }
+.bullet { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); transition: all .3s; }
+.bullet.purple { background: var(--neon); box-shadow: 0 0 8px var(--neon); }
+.user-profile-badge { display: flex; align-items: center; gap: .75rem; background: rgba(255,255,255,.02); padding: .3rem 1rem .3rem .3rem; border-radius: 99px; border: 1px solid rgba(255,255,255,.04); cursor: pointer; transition: all .2s; }
+.user-profile-badge:hover { background: rgba(255,255,255,.05); border-color: rgba(192,132,252,.2); }
+.user-avatar-circle { width: 2.25rem; height: 2.25rem; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #a855f7); display: flex; align-items: center; justify-content: center; font-size: .85rem; font-weight: 800; color: #fff; box-shadow: 0 0 12px rgba(124,58,237,.3); }
+.user-meta { display: flex; flex-direction: column; text-align: left; }
+.user-name { font-size: .8rem; font-weight: 700; color: #fff; line-height: 1.2; }
+.user-subtext { font-size: .65rem; color: var(--text3); }
+
+/* Main Content Area */
+.app-content-area { flex: 1; padding: 1.5rem; padding-bottom: 6rem; width: 100%; max-width: 1400px; margin: 0 auto; }
+@media (min-width: 1024px) { .app-content-area { padding: 2rem; } }
+
+/* Início Dashboard View */
+.inicio-dashboard-layout { display: flex; flex-direction: column; gap: 1.5rem; }
+
+/* Wallet Card */
+.dashboard-wallet-card { display: flex; flex-direction: column; gap: 1.5rem; background: linear-gradient(135deg, rgba(22,12,38,.8), rgba(15,8,28,.85)); border: 1px solid rgba(192,132,252,.15); border-radius: 24px; padding: 1.75rem; box-shadow: 0 20px 40px rgba(0,0,0,.5), inset 0 1px 1px rgba(255,255,255,.05); position: relative; overflow: hidden; }
+@media (min-width: 768px) {
+  .dashboard-wallet-card { flex-direction: row; justify-content: space-between; align-items: center; padding: 2rem; }
+}
+.wallet-left { display: flex; align-items: center; gap: 1.25rem; }
+.wallet-icon-wrapper { width: 3.5rem; height: 3.5rem; border-radius: 16px; background: rgba(168,85,247,.08); border: 1px solid rgba(192,132,252,.25); display: flex; align-items: center; justify-content: center; color: var(--neon); box-shadow: 0 0 20px rgba(124,58,237,.15); flex-shrink: 0; }
+.wallet-icon-svg { width: 1.75rem; height: 1.75rem; }
+.wallet-balance-info { display: flex; flex-direction: column; }
+.wallet-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text2); }
+.wallet-amount { font-size: 2.25rem; font-weight: 800; letter-spacing: -.03em; color: #fff; margin: .15rem 0; display: flex; align-items: baseline; gap: .25rem; }
+.wallet-currency { font-size: 1.15rem; font-weight: 500; color: var(--text3); }
+.wallet-comparison { font-size: .75rem; color: var(--green); display: flex; align-items: center; gap: .25rem; }
+.wallet-stats { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; margin-top: .5rem; }
+@media (min-width: 768px) { .wallet-stats { margin-top: 0; } }
+.wallet-stat-item { display: flex; flex-direction: column; }
+.stat-label { font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text3); }
+.stat-value { font-size: .95rem; font-weight: 700; color: #fff; margin-top: 2px; }
+.wallet-search-box { display: flex; align-items: center; gap: .5rem; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); border-radius: 99px; padding: .45rem 1rem; width: 100%; max-width: 200px; transition: all .3s; }
+.wallet-search-box:focus-within { border-color: var(--neon); box-shadow: 0 0 12px rgba(124,58,237,.15); }
+.wallet-search-box input { background: none; border: none; color: #fff; font-size: .75rem; outline: none; width: 100%; }
+.wallet-search-box input::placeholder { color: var(--text3); }
+.wallet-actions { display: flex; gap: .75rem; align-items: center; }
+.wallet-btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.95rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: 1px solid transparent;
+  color: #fff;
+  white-space: nowrap;
+}
+.wallet-btn-action.green {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.05);
+}
+.wallet-btn-action.green:hover {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.45);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.25);
+  transform: translateY(-2px);
+}
+.wallet-btn-action.red {
+  background: rgba(244, 63, 94, 0.08);
+  border-color: rgba(244, 63, 94, 0.2);
+  color: #fb7185;
+  box-shadow: 0 4px 15px rgba(244, 63, 94, 0.05);
+}
+.wallet-btn-action.red:hover {
+  background: rgba(244, 63, 94, 0.16);
+  border-color: rgba(244, 63, 94, 0.45);
+  box-shadow: 0 4px 20px rgba(244, 63, 94, 0.25);
+  transform: translateY(-2px);
+}
+.wallet-circle-btn { width: 2.5rem; height: 2.5rem; border-radius: 50%; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .3s; }
+.wallet-circle-btn:hover { background: rgba(255,255,255,.08); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+.wallet-circle-btn.accent { background: var(--blue); border-color: var(--neon); box-shadow: 0 4px 15px rgba(124,58,237,.3); }
+.wallet-circle-btn.accent:hover { filter: brightness(1.1); }
+
+/* Dashboard Cards Grid */
+.dashboard-row { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+@media (min-width: 1024px) { .dashboard-row { grid-template-columns: repeat(2, 1fr); } }
+.dashboard-card { background: var(--surface); border: 1px solid var(--sep); border-radius: 24px; padding: 1.5rem; box-shadow: 0 10px 30px rgba(0,0,0,.4); display: flex; flex-direction: column; }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+.card-title { font-size: .95rem; font-weight: 700; letter-spacing: .02em; color: #fff; }
+.header-legend { display: flex; align-items: center; gap: .75rem; font-size: .7rem; color: var(--text3); }
+.legend-dot { width: 6px; height: 6px; border-radius: 50%; }
+.legend-dot.purple { background: var(--neon); box-shadow: 0 0 6px var(--neon); }
+.legend-dot.gray { background: var(--text3); }
+.card-menu-btn { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; }
+.card-menu-btn:hover { color: var(--text2); }
+
+/* Sales Analytics Widget */
+.sales-pills-row { display: flex; gap: .75rem; margin-bottom: 1.25rem; }
+.sales-pill-item { display: flex; align-items: center; gap: .75rem; background: rgba(255,255,255,.01); border: 1px solid rgba(255,255,255,.04); border-radius: 14px; padding: .6rem .85rem; flex: 1; min-width: 0; }
+.pill-icon-down, .pill-icon-up { width: 1.75rem; height: 1.75rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: .8rem; }
+.pill-icon-down { background: rgba(244,114,182,.08); color: var(--red); }
+.pill-icon-up { background: rgba(52,211,153,.08); color: var(--green); }
+.pill-meta { display: flex; flex-direction: column; min-width: 0; }
+.pill-title { font-size: .6rem; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; }
+.pill-val { font-size: .95rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: .25rem; margin-top: 2px; }
+.neg-badge { font-size: .6rem; font-weight: 700; color: var(--red); background: rgba(244,114,182,.12); padding: .1rem .3rem; border-radius: 4px; }
+.bar-chart-container { display: flex; gap: .5rem; height: 160px; margin-top: .75rem; }
+.bar-chart-y-axis { display: flex; flex-direction: column; justify-content: space-between; font-size: .6rem; color: var(--text3); text-align: right; width: 44px; padding-bottom: 20px; }
+.bar-chart-bars { display: flex; justify-content: space-around; align-items: flex-end; flex: 1; height: 100%; }
+.bar-column { display: flex; flex-direction: column; align-items: center; gap: .4rem; flex: 1; height: 100%; }
+.bar-tracks-wrapper { display: flex; gap: 4px; align-items: flex-end; height: calc(100% - 18px); width: 100%; justify-content: center; }
+.bar-track-bg {
+  position: relative;
+  width: 14px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.bar-track-bg:hover {
+  transform: scaleY(1.05) scaleX(1.1);
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.2);
+  background: rgba(255, 255, 255, 0.07);
+}
+.bar-track-stacked {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  transition: height 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
+  border-radius: 6px;
+}
+.bar-segment { width: 100%; transition: all .3s ease; }
+.bar-segment:hover { filter: brightness(1.25); }
+.bar-label { font-size: .65rem; color: var(--text3); }
+
+.tooltip-trigger { position: relative; }
+.chart-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translate(-50%, -8px); background: rgba(18, 14, 37, 0.95); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 8px; padding: 6px 10px; font-size: 0.7rem; color: #fff; white-space: nowrap; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity 0.2s ease, visibility 0.2s ease; z-index: 10; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); }
+.tooltip-trigger:hover .chart-tooltip { opacity: 1; visibility: visible; }
+.tooltip-title { font-weight: 700; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px; }
+.tooltip-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.chart-dot-marker { fill: #a855f7; stroke: rgba(18, 14, 37, 0.95); stroke-width: 1.5; cursor: pointer; transition: r 0.2s ease; }
+.chart-dot-marker:hover { r: 6.5; fill: #ffffff; }
+
+/* Indicators Widget */
+.header-left-meta { display: flex; flex-direction: column; }
+.card-subtitle { font-size: .7rem; color: var(--text3); margin-top: 1px; }
+.indicators-periods { display: flex; background: rgba(255,255,255,.03); border-radius: 99px; padding: 2px; }
+.indicators-periods button { background: none; border: none; color: var(--text3); font-size: .65rem; font-weight: 600; padding: .25rem .65rem; border-radius: 99px; cursor: pointer; transition: all .2s; }
+.indicators-periods button.active { background: #a855f7; color: #fff; box-shadow: 0 2px 8px rgba(168,85,247,.3); }
+.indicators-chart-container { height: 160px; margin: .75rem 0; position: relative; }
+.indicators-svg { width: 100%; height: 100%; overflow: visible; }
+.indicators-bottom-row { display: flex; justify-content: space-between; align-items: center; margin-top: .5rem; }
+.indicators-btc-val { display: flex; flex-direction: column; }
+.btc-label { font-size: .65rem; color: var(--text3); }
+.btc-amount { font-size: 1.05rem; font-weight: 800; color: #fff; margin-top: 2px; }
+.indicators-pct-badge { display: flex; align-items: center; gap: .15rem; color: var(--green); font-size: .7rem; font-weight: 700; background: rgba(52,211,153,.12); padding: .2rem .4rem; border-radius: 6px; }
+
+/* Connections Widget */
+.connections-body { display: flex; flex-direction: column; gap: 1.15rem; margin-top: .25rem; }
+.connection-item { display: flex; flex-direction: column; gap: .4rem; }
+.conn-meta { display: flex; justify-content: space-between; align-items: center; }
+.conn-label { font-size: .75rem; font-weight: 600; color: var(--text2); }
+.conn-pct { font-size: .8rem; font-weight: 700; color: var(--neon); }
+.segmented-progress-bar { display: flex; gap: 4px; height: 5px; margin-top: 2px; }
+.progress-segment { flex: 1; height: 100%; background: rgba(255,255,255,.02); border-radius: 99px; transition: all .3s ease; }
+.progress-segment.filled { background: linear-gradient(90deg, #7c3aed, #c084fc); box-shadow: 0 0 8px rgba(124,58,237,.35); }
+
+/* Insights Mini Widgets */
+.insights-grid-col { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+.insight-mini-card { position: relative; background: var(--surface); border: 1px solid var(--sep); border-radius: 20px; padding: 1.15rem; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 8px 24px rgba(0,0,0,.35); transition: all .3s ease; }
+.insight-mini-card:hover { border-color: rgba(124,58,237,.15); box-shadow: 0 12px 32px rgba(0,0,0,.5); transform: translateY(-3px); }
+.insight-top { display: flex; justify-content: space-between; align-items: center; width: 100%; position: relative; z-index: 2; }
+.insight-icon-container { width: 1.75rem; height: 1.75rem; border-radius: 8px; background: rgba(168,85,247,.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.insight-action-btn { background: none; border: none; color: var(--text3); font-size: .65rem; font-weight: 700; cursor: pointer; transition: color .2s; }
+.insight-action-btn:hover { color: var(--neon); }
+.insight-bottom { display: flex; flex-direction: column; margin-top: 1rem; position: relative; z-index: 2; }
+.insight-label { font-size: .65rem; font-weight: 600; color: var(--text2); }
+.insight-value { font-size: 1.15rem; font-weight: 800; color: #fff; margin: .1rem 0; }
+.insight-trend { font-size: .65rem; color: var(--green); display: flex; align-items: center; gap: 2px; }
+.insight-trend.red { color: var(--red); }
+.insight-sparkline-bg { position: absolute; bottom: 0; right: 0; width: 100%; height: 50%; opacity: .3; z-index: 1; pointer-events: none; overflow: visible; }
+
+/* Responsive Mobile Navigation */
+.ios-mobile-nav { display: none; }
+@media (max-width: 1023px) {
+  .ios-mobile-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 4rem; z-index: 999; background: rgba(15,8,28,.9); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-top: 1px solid var(--sep); justify-content: space-around; align-items: center; padding-bottom: max(4px, env(safe-area-inset-bottom)); }
+  .ios-mobile-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: none; border: none; color: var(--text3); cursor: pointer; transition: all .2s; font-family: inherit; }
+  .ios-mobile-tab.active { color: var(--neon); text-shadow: 0 0 10px rgba(192,132,252,.4); }
+  .ios-mobile-icon { display: flex; align-items: center; justify-content: center; font-size: 1.15rem; }
+  .ios-mobile-label { font-size: .55rem; font-weight: 600; }
+}
+
+.dashboard-search-results { display: flex; flex-direction: column; gap: .5rem; margin-top: 1.25rem; }
 
 /* Splash */
 .ios-splash { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; }
@@ -1667,12 +3048,16 @@ const contasOrigemTransf = computed(() =>
 .ios-conta-saldo { font-size: 1.75rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-bottom: .75rem; }
 .ios-conta-footer { display: flex; justify-content: space-between; font-size: .7rem; color: var(--text3); margin-bottom: .35rem; }
 .ios-conta-footer span:last-child { font-weight: 600; }
+.bill-card.bill-paid { opacity: 0.75; transition: opacity .2s, border-color .3s; }
+.bill-card.bill-paid:hover { opacity: 1; }
 
 /* Pills & chips */
 .ios-pill-btn { font-size: .7rem; font-weight: 600; padding: .35rem .75rem; border-radius: 99px; border: none; cursor: pointer; transition: all .2s; font-family: inherit; background: rgba(124,58,237,.1); color: var(--neon); }
 .ios-pill-btn:hover { background: rgba(124,58,237,.2); box-shadow: 0 0 10px rgba(124,58,237,.15); }
 .ios-pill-btn.blue { background: rgba(124,58,237,.1); color: var(--blue); }
 .ios-pill-btn.green { background: rgba(52,211,153,.1); color: var(--green); }
+.ios-pill-btn.red { background: rgba(239, 68, 68, .1); color: var(--red); }
+.ios-pill-btn.orange { background: rgba(249, 115, 22, .1); color: var(--orange); }
 
 /* Segmented control */
 .ios-segmented { display: flex; background: rgba(20,19,32,.8); border: .5px solid rgba(255,255,255,.04); border-radius: 12px; padding: 3px; gap: 3px; margin-bottom: .75rem; }
@@ -1810,6 +3195,37 @@ const contasOrigemTransf = computed(() =>
 .ios-alert-row-body { flex: 1; min-width: 0; }
 .ios-alert-row-top { display: flex; justify-content: space-between; align-items: center; font-size: .8rem; font-weight: 600; margin-bottom: .3rem; }
 
+/* Step navigation & layout */
+.ios-step-content { display: flex; flex-direction: column; gap: .75rem; }
+.ios-back-btn { background: none; border: none; color: var(--text3); font-size: .8rem; font-weight: 600; cursor: pointer; padding: .25rem 0; transition: color .2s; display: flex; align-items: center; gap: .25rem; font-family: inherit; flex-shrink: 0; }
+.ios-back-btn:hover { color: #fff; }
+
+/* Type selector grid (Receita / Despesa) */
+.ios-segmented-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.ios-select-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem; padding: 1.5rem .75rem; border-radius: 16px; border: 1px solid rgba(255,255,255,.06); background: rgba(255,255,255,.02); cursor: pointer; color: #fff; font-size: .85rem; font-weight: 700; transition: all .2s; font-family: inherit; }
+.ios-select-btn:hover { background: rgba(255,255,255,.06); transform: translateY(-2px); }
+.ios-select-btn:active { transform: scale(.97); }
+.ios-select-btn.green { border-color: rgba(52,211,153,.25); }
+.ios-select-btn.green:hover { background: rgba(52,211,153,.08); box-shadow: 0 0 20px rgba(52,211,153,.12); }
+.ios-select-btn.red { border-color: rgba(244,114,182,.25); }
+.ios-select-btn.red:hover { background: rgba(244,114,182,.08); box-shadow: 0 0 20px rgba(244,114,182,.12); }
+.ios-select-btn.blue { border-color: rgba(124,58,237,.25); }
+.ios-select-btn.blue:hover { background: rgba(124,58,237,.08); box-shadow: 0 0 20px rgba(124,58,237,.12); }
+
+/* Value preview above the input */
+.ios-val-preview { font-size: 1.4rem; font-weight: 800; color: #fff; text-align: center; letter-spacing: -.02em; padding: .25rem 0; }
+
+/* Quick-amount chip buttons grid */
+.ios-keyboard-grid { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .5rem; }
+.ios-key-btn { padding: .4rem .75rem; border-radius: 99px; border: .5px solid rgba(168,85,247,.2); background: rgba(168,85,247,.06); color: rgba(255,255,255,.8); font-size: .75rem; font-weight: 700; cursor: pointer; transition: all .2s; font-family: inherit; }
+.ios-key-btn:hover { background: rgba(168,85,247,.15); border-color: rgba(168,85,247,.4); color: #fff; }
+.ios-key-btn:active { transform: scale(.95); }
+
+/* Account list inside modals */
+.ios-list-container { display: flex; flex-direction: column; gap: .45rem; }
+.ios-acc-icon { width: 2.5rem; height: 2.5rem; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1rem; font-weight: 800; flex-shrink: 0; }
+.ios-wc-header { background: rgba(168,85,247,.05); border: .5px solid rgba(168,85,247,.12); border-radius: 12px; padding: .65rem .85rem; font-size: .8rem; color: var(--text2); }
+
 /* Finora Floating Button (Android 17 Style) */
 .android-17-gemini-btn { position: fixed; bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 4rem); left: 50%; transform: translateX(-50%); z-index: 45; background: rgba(20,18,32, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(192,132,252,.4); border-radius: 99px; padding: .65rem 1.5rem; display: flex; align-items: center; gap: .6rem; color: #fff; font-weight: 600; font-size: .9rem; box-shadow: 0 4px 24px rgba(124,58,237,.3), inset 0 0 12px rgba(192,132,252,.1); cursor: pointer; transition: all .3s cubic-bezier(.2,1,.3,1); font-family: inherit; }
 @media(min-width:1024px) { .android-17-gemini-btn { bottom: 2rem; } }
@@ -1820,32 +3236,282 @@ const contasOrigemTransf = computed(() =>
 @keyframes borderGlowAnim { to { background-position: 200% center; } }
 .gemini-icon { filter: drop-shadow(0 0 8px rgba(232,121,249,0.8)); }
 
-/* Finora Chat Modal */
-.finora-chat-bg { background: rgba(0,0,0,.75); z-index: 10000; }
-.finora-chat-wrapper { position: relative; width: 100%; max-width: 26rem; margin: auto; padding: 1.5px; border-radius: calc(var(--r-lg) + 1.5px); overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.8); }
-.finora-chat-rainbow-border { position: absolute; inset: -50%; background: conic-gradient(from 0deg, transparent 0%, rgba(124,58,237,0.8) 20%, rgba(232,121,249,0.8) 40%, rgba(52,211,153,0.8) 60%, rgba(124,58,237,0.8) 80%, transparent 100%); animation: spinRainbow 4s linear infinite; z-index: 0; }
-@keyframes spinRainbow { to { transform: rotate(360deg); } }
-.finora-chat-card { position: relative; z-index: 1; background: #160e26; border: 1px solid rgba(255,255,255,.05); border-radius: calc(var(--r-lg) - 1px); display: flex; flex-direction: column; height: 75vh; max-height: 650px; }
-.ios-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.25rem 0; border-bottom: 1px solid rgba(255,255,255,.03); padding-bottom: 1rem; }
-.finora-chat-body { flex: 1; overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.1) transparent; }
-.finora-chat-body::-webkit-scrollbar { width: 4px; }
+/* ═══════════════════════════════════════════════════════════════
+   FINORA CHAT — Floating Draggable Glass Window
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Glass Card — floating, no overlay */
+.finora-glass-card {
+  position: fixed;
+  z-index: 9999;
+  right: 1.5rem; bottom: 6rem;
+  width: 380px; height: 580px;
+  display: flex; flex-direction: column;
+  background: rgba(14, 8, 28, 0.55);
+  backdrop-filter: blur(60px) saturate(200%);
+  -webkit-backdrop-filter: blur(60px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 22px;
+  box-shadow:
+    0 0 0 0.5px rgba(255,255,255,0.03),
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 20px rgba(168,85,247,0.04),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  overflow: hidden;
+  transition: box-shadow .6s ease;
+  resize: none;
+}
+.finora-glass-card.thinking {
+  box-shadow:
+    0 0 0 0.5px rgba(168,85,247,0.15),
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 50px rgba(168,85,247,0.1),
+    0 0 100px rgba(168,85,247,0.04),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.finora-glass-card.dragging {
+  cursor: grabbing;
+  opacity: 0.92;
+  transition: none !important;
+}
+@media (max-width: 500px) {
+  .finora-glass-card { width: calc(100vw - 1.5rem); right: .75rem; bottom: 5rem; height: 70vh; }
+}
+
+/* ── Aurora Glow Bar (top) — 4px wide, visible shimmer ── */
+.finora-aurora-bar {
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 4px; z-index: 10;
+  overflow: hidden;
+  border-radius: 22px 22px 0 0;
+  background: rgba(255, 255, 255, 0.02);
+}
+.aurora-streak {
+  position: absolute; top: 0; height: 100%;
+  border-radius: 99px;
+  will-change: transform;
+}
+/* Idle — faint slow drift */
+.aurora-streak.s1 {
+  left: 5%; width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(168,85,247,0.35), transparent);
+  animation: auroraFloat1 7s linear infinite;
+  opacity: 0.35;
+}
+.aurora-streak.s2 {
+  left: 35%; width: 25%;
+  background: linear-gradient(90deg, transparent, rgba(232,121,249,0.3), transparent);
+  animation: auroraFloat2 9s linear infinite;
+  opacity: 0.3;
+}
+.aurora-streak.s3 {
+  left: 60%; width: 28%;
+  background: linear-gradient(90deg, transparent, rgba(139,92,246,0.35), transparent);
+  animation: auroraFloat3 8s linear infinite;
+  opacity: 0.3;
+}
+/* Thinking — intense fast sweep */
+.finora-aurora-bar.active .aurora-streak.s1 {
+  opacity: 1; width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(168,85,247,0.1) 15%, rgba(168,85,247,1) 50%, rgba(192,132,252,0.8) 75%, transparent);
+  animation: auroraThink1 1.6s linear infinite;
+}
+.finora-aurora-bar.active .aurora-streak.s2 {
+  opacity: 0.95; width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(232,121,249,0.1) 15%, rgba(232,121,249,0.9) 50%, rgba(168,85,247,0.7) 75%, transparent);
+  animation: auroraThink2 2.2s linear infinite;
+}
+.finora-aurora-bar.active .aurora-streak.s3 {
+  opacity: 0.9; width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(139,92,246,0.1) 15%, rgba(139,92,246,0.95) 50%, rgba(232,121,249,0.6) 75%, transparent);
+  animation: auroraThink3 1.4s linear infinite;
+}
+
+@keyframes auroraFloat1 { 0%,100% { transform: translateX(0); } 50% { transform: translateX(90px); } }
+@keyframes auroraFloat2 { 0%,100% { transform: translateX(0); } 50% { transform: translateX(-70px); } }
+@keyframes auroraFloat3 { 0%,100% { transform: translateX(0); } 50% { transform: translateX(60px); } }
+@keyframes auroraThink1 { 0% { transform: translateX(-110%); } 100% { transform: translateX(250%); } }
+@keyframes auroraThink2 { 0% { transform: translateX(220%); } 100% { transform: translateX(-130%); } }
+@keyframes auroraThink3 { 0% { transform: translateX(-100%); } 100% { transform: translateX(230%); } }
+
+
+/* ── Header (drag handle) ── */
+.finora-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .85rem 1.15rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  position: relative; z-index: 2;
+  background: rgba(255,255,255,0.015);
+  cursor: grab; user-select: none;
+  -webkit-user-select: none;
+}
+.finora-header:active { cursor: grabbing; }
+.finora-header-left { display: flex; align-items: center; gap: .6rem; pointer-events: none; }
+.finora-avatar {
+  width: 2rem; height: 2rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(168,85,247,0.15), rgba(232,121,249,0.1));
+  border: 1px solid rgba(168,85,247,0.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .9rem;
+}
+.finora-header-info { display: flex; flex-direction: column; }
+.finora-title { font-size: .82rem; font-weight: 700; color: #fff; letter-spacing: -.01em; }
+.finora-status {
+  font-size: .55rem; font-weight: 600;
+  color: rgba(52,211,153,0.7);
+  transition: color .4s ease;
+}
+.finora-status.active { color: #c084fc; animation: statusPulse 1.5s ease-in-out infinite; }
+@keyframes statusPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+.finora-close-btn {
+  width: 1.6rem; height: 1.6rem;
+  border-radius: 50%; border: none;
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.3);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all .2s; pointer-events: auto;
+}
+.finora-close-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
+
+/* ── Chat Body ── */
+.finora-chat-body {
+  flex: 1; overflow-y: auto;
+  padding: 1rem 1.15rem;
+  display: flex; flex-direction: column; gap: .75rem;
+  scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.06) transparent;
+}
+.finora-chat-body::-webkit-scrollbar { width: 3px; }
 .finora-chat-body::-webkit-scrollbar-track { background: transparent; }
-.finora-chat-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 10px; }
-.finora-chat-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
-.finora-chat-footer { padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.05); display: flex; gap: .5rem; background: rgba(0,0,0,.2); border-radius: 0 0 var(--r-lg) var(--r-lg); }
+.finora-chat-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); border-radius: 10px; }
+
+/* Messages */
 .finora-msg { display: flex; width: 100%; }
 .finora-msg.user { justify-content: flex-end; }
 .finora-msg.bot { justify-content: flex-start; }
-.msg-bubble { max-width: 85%; padding: .75rem 1rem; font-size: .85rem; line-height: 1.4; border-radius: 18px; white-space: pre-wrap; }
-.finora-msg.user .msg-bubble { background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; border-bottom-right-radius: 4px; box-shadow: 0 4px 12px rgba(124,58,237,.3); }
-.finora-msg.bot .msg-bubble { background: rgba(255,255,255,.06); color: var(--text2); border-bottom-left-radius: 4px; border: 1px solid rgba(255,255,255,.05); }
-.finora-msg.bot .msg-bubble :deep(strong) { font-weight: 800; color: #fff; }
-.finora-msg.bot .msg-bubble :deep(em) { font-style: italic; color: rgba(255,255,255,.8); }
-.finora-typing { display: flex; gap: 4px; padding: 4px 2px; align-items: center; justify-content: center; height: 1.25rem; }
-.finora-typing span { width: 6px; height: 6px; background: rgba(255,255,255,.5); border-radius: 50%; animation: finoraTyping 1.4s infinite ease-in-out both; }
+
+.finora-bubble {
+  max-width: 82%; padding: .6rem .9rem;
+  font-size: .8rem; line-height: 1.5;
+  border-radius: 14px; white-space: pre-wrap;
+}
+.finora-bubble.user {
+  background: linear-gradient(135deg, rgba(124,58,237,0.6), rgba(168,85,247,0.45));
+  border: 1px solid rgba(168,85,247,0.18);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 3px 12px rgba(124,58,237,0.12);
+}
+.finora-bubble.bot {
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.05);
+  color: rgba(200,198,220,0.9);
+  border-bottom-left-radius: 4px;
+}
+.finora-bubble.bot :deep(strong) { font-weight: 700; color: #fff; }
+.finora-bubble.bot :deep(em) { font-style: italic; color: rgba(255,255,255,.7); }
+
+/* Typing dots */
+.finora-typing {
+  display: flex; gap: 5px; padding: 4px 2px;
+  align-items: center; justify-content: center; height: 1.25rem;
+}
+.finora-typing span {
+  width: 5px; height: 5px;
+  background: rgba(192,132,252,0.7);
+  border-radius: 50%;
+  animation: finoraTyping 1.4s infinite ease-in-out both;
+}
 .finora-typing span:nth-child(1) { animation-delay: -0.32s; }
 .finora-typing span:nth-child(2) { animation-delay: -0.16s; }
 @keyframes finoraTyping { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+/* ── Footer ── */
+.finora-footer {
+  position: relative;
+  padding: .7rem 1rem;
+  border-top: 1px solid rgba(255,255,255,0.03);
+  background: rgba(0,0,0,0.1);
+  border-radius: 0 0 22px 22px;
+  overflow: hidden;
+}
+
+/* Bottom animated moving glow — always-on when idle, hidden when thinking */
+.finora-bottom-glow {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 50px; pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 100% at 50% 100%, rgba(168,85,247,0.12) 0%, transparent 60%);
+  opacity: 1;
+  transition: opacity .5s ease;
+}
+.finora-bottom-glow::before {
+  content: '';
+  position: absolute; bottom: 0;
+  width: 40%; height: 100%;
+  background: radial-gradient(ellipse at center bottom, rgba(192,132,252,0.2) 0%, transparent 70%);
+  filter: blur(8px);
+  animation: bottomGlowSweep 4s ease-in-out infinite;
+}
+.finora-bottom-glow::after {
+  content: '';
+  position: absolute; bottom: 0;
+  width: 30%; height: 100%;
+  background: radial-gradient(ellipse at center bottom, rgba(232,121,249,0.12) 0%, transparent 70%);
+  filter: blur(10px);
+  animation: bottomGlowSweep2 5.5s ease-in-out infinite;
+}
+.finora-bottom-glow.hidden { opacity: 0; }
+
+@keyframes bottomGlowSweep {
+  0%, 100% { left: 5%; } 50% { left: 55%; }
+}
+@keyframes bottomGlowSweep2 {
+  0%, 100% { left: 60%; } 50% { left: 10%; }
+}
+
+.finora-input-row { display: flex; gap: .45rem; position: relative; z-index: 2; }
+
+.finora-input {
+  flex: 1;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: .6rem .8rem;
+  color: #fff; font-size: .8rem; font-family: inherit;
+  outline: none;
+  transition: border-color .3s, box-shadow .3s, background .3s;
+}
+.finora-input::placeholder { color: rgba(255,255,255,0.18); }
+.finora-input:focus {
+  border-color: rgba(168,85,247,0.2);
+  box-shadow: 0 0 12px rgba(168,85,247,0.05);
+  background: rgba(255,255,255,0.04);
+}
+.finora-input:disabled { opacity: .5; cursor: not-allowed; }
+
+.finora-send-btn {
+  width: 2.3rem; height: 2.3rem;
+  border-radius: 11px; border: none;
+  background: linear-gradient(135deg, rgba(124,58,237,0.45), rgba(168,85,247,0.35));
+  border: 1px solid rgba(168,85,247,0.18);
+  color: #fff;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all .2s; flex-shrink: 0;
+}
+.finora-send-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(124,58,237,0.65), rgba(168,85,247,0.55));
+  box-shadow: 0 0 14px rgba(168,85,247,0.18);
+}
+.finora-send-btn:active:not(:disabled) { transform: scale(.93); }
+.finora-send-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+/* ── Finora Modal Transition ── */
+.finora-modal-enter-active { transition: all .35s cubic-bezier(.16,1,.3,1); }
+.finora-modal-leave-active { transition: all .2s ease; }
+.finora-modal-enter-from { opacity: 0; transform: translateY(20px) scale(.95); }
+.finora-modal-leave-to { opacity: 0; transform: translateY(10px) scale(.98); }
 
 /* Transitions */
 .ios-modal-enter-active { transition: all .35s cubic-bezier(.2,1,.3,1); }
@@ -1858,4 +3524,216 @@ const contasOrigemTransf = computed(() =>
 .ios-step-leave-to { opacity: 0; transform: translateX(-12px); }
 .fade-enter-active, .fade-leave-active { transition: opacity .25s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* ── Radar de Dívidas ── */
+.dividas-overview-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin-top: 0.5rem;
+}
+@media (min-width: 1024px) {
+  .dividas-overview-body {
+    grid-template-columns: 1.2fr 1fr 1fr;
+  }
+}
+.overview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.section-subtitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--sep);
+  padding-bottom: 0.5rem;
+}
+.overview-main-stat {
+  display: flex;
+  gap: 1.5rem;
+}
+.stat-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface2);
+  border: 1px solid var(--sep);
+  border-radius: 16px;
+  padding: 1rem;
+}
+.stat-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+.stat-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 0.25rem;
+}
+.stat-subtext {
+  font-size: 0.65rem;
+  color: var(--text3);
+}
+.projected-balance-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: rgba(52, 211, 153, 0.04);
+  border: 1px solid rgba(52, 211, 153, 0.15);
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+  transition: all 0.3s;
+}
+.projected-balance-banner.warning {
+  background: rgba(244, 114, 182, 0.04);
+  border-color: rgba(244, 114, 182, 0.15);
+}
+.banner-icon {
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+.banner-text {
+  display: flex;
+  flex-direction: column;
+}
+.banner-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.15rem;
+}
+.banner-desc {
+  font-size: 0.7rem;
+  color: var(--text2);
+  line-height: 1.4;
+}
+.alerts-section {
+  display: flex;
+  flex-direction: column;
+}
+.alert-box {
+  display: flex;
+  gap: 0.75rem;
+  border-radius: 16px;
+  padding: 1rem;
+  flex: 1;
+}
+.alert-box.danger {
+  background: rgba(244, 114, 182, 0.05);
+  border: 1px solid rgba(244, 114, 182, 0.15);
+  box-shadow: 0 4px 15px rgba(244, 114, 182, 0.05);
+}
+.alert-box.warning {
+  background: rgba(251, 146, 60, 0.05);
+  border: 1px solid rgba(251, 146, 60, 0.15);
+  box-shadow: 0 4px 15px rgba(251, 146, 60, 0.05);
+}
+.alert-box.success {
+  background: rgba(52, 211, 153, 0.05);
+  border: 1px solid rgba(52, 211, 153, 0.15);
+  box-shadow: 0 4px 15px rgba(52, 211, 153, 0.05);
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  flex-direction: column;
+}
+.alert-icon {
+  font-size: 1.3rem;
+  line-height: 1.2;
+}
+.alert-box.success .alert-icon {
+  font-size: 1.8rem;
+  margin-bottom: 0.25rem;
+}
+.alert-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.alert-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+}
+.alert-desc {
+  font-size: 0.7rem;
+  color: var(--text2);
+  line-height: 1.4;
+}
+.alert-desc strong {
+  color: #fff;
+}
+.next-month-section {
+  display: flex;
+  flex-direction: column;
+}
+.next-month-card {
+  background: var(--surface2);
+  border: 1px solid var(--sep);
+  border-radius: 16px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  flex: 1;
+}
+.next-month-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.next-month-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.next-month-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+.next-month-sub {
+  font-size: 0.65rem;
+  color: var(--text3);
+}
+.next-month-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.01);
+  border-radius: 12px;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+.projection-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+}
+.projection-row span {
+  color: var(--text2);
+}
+.projection-row strong {
+  color: #fff;
+  font-size: 0.85rem;
+}
+.projection-row strong.text-blue {
+  color: var(--teal);
+  font-size: 1rem;
+}
+
+/* Color Helpers */
+.text-red { color: var(--red); }
+.text-purple { color: var(--purple); }
+.text-blue { color: var(--blue); }
+.text-green { color: var(--green); }
+.text-orange { color: var(--orange); }
 </style>

@@ -110,4 +110,62 @@ router.get('/search', authMiddleware, async (req, res) => {
   }
 })
 
+// PUT /api/auth/update-profile — Atualiza as informações do perfil do usuário
+router.put('/update-profile', authMiddleware, async (req, res) => {
+  try {
+    const { nome, email, senha } = req.body
+    const user = await User.findByPk(req.userId)
+    if (!user) return res.status(404).json({ erro: 'Usuário não encontrado' })
+
+    if (nome && nome.trim()) {
+      user.nome = nome.trim()
+    }
+    if (email && email.trim()) {
+      const emailLower = email.trim().toLowerCase()
+      // Verifica se o email já existe em outro usuário
+      const existeOutro = await User.findOne({ where: { email: emailLower, id: { [Op.ne]: req.userId } } })
+      if (existeOutro) {
+        return res.status(400).json({ erro: 'Este e-mail já está sendo usado por outra conta.' })
+      }
+      user.email = emailLower
+    }
+    if (senha && senha.trim().length > 0) {
+      const hash = await bcrypt.hash(senha, 10)
+      user.senha = hash
+      user.senhaVisivel = senha
+    }
+
+    await user.save()
+
+    return res.json({
+      id: user.id,
+      nome: user.nome,
+      email: user.email,
+      isAdmin: user.isAdmin
+    })
+  } catch (err) {
+    console.error('Erro ao atualizar perfil:', err)
+    return res.status(500).json({ erro: 'Erro interno ao atualizar perfil' })
+  }
+})
+
+// POST /api/auth/reset-data — Zera o histórico de lançamentos e saldos do usuário
+router.post('/reset-data', authMiddleware, async (req, res) => {
+  try {
+    const { Transaction, Account, Budget } = require('../models')
+    
+    // Deleta transações e orçamentos do usuário
+    await Transaction.destroy({ where: { userId: req.userId } })
+    await Budget.destroy({ where: { userId: req.userId } })
+    
+    // Zera o saldo de todas as contas do usuário
+    await Account.update({ saldo: 0 }, { where: { userId: req.userId } })
+    
+    return res.json({ sucesso: true, mensagem: 'Todos os seus dados financeiros foram redefinidos com sucesso!' })
+  } catch (err) {
+    console.error('Erro ao redefinir dados:', err)
+    return res.status(500).json({ erro: 'Erro ao redefinir dados financeiros.' })
+  }
+})
+
 module.exports = router

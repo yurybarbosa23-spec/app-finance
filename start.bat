@@ -1,6 +1,6 @@
 @echo off
-:: Mata processo na porta 3000 se estiver em uso
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3000') do taskkill /F /PID %%a 2>NUL
+:: Mata todas as instâncias antigas do Node (Frontend, Backend e Bot) para evitar portas presas e conflitos de 409
+taskkill /F /IM node.exe 2>NUL
 
 :: Inicia Ollama se não estiver rodando
 tasklist /FI "IMAGENAME eq ollama.exe" 2>NUL | find /I "ollama.exe" >NUL

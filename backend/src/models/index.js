@@ -6,6 +6,7 @@ const Account     = require('./Account')(sequelize, DataTypes)
 const Transaction = require('./Transaction')(sequelize, DataTypes)
 const Item        = require('./Item')(sequelize, DataTypes)
 const Budget      = require('./Budget')(sequelize, DataTypes)
+const Bill        = require('./Bill')(sequelize, DataTypes)
 
 User.hasMany(Account,          { foreignKey: 'userId', onDelete: 'CASCADE' })
 Account.belongsTo(User,        { foreignKey: 'userId' })
@@ -22,4 +23,7 @@ Item.belongsTo(Account,        { foreignKey: 'accountId', as: 'conta' })
 User.hasMany(Budget,           { foreignKey: 'userId', onDelete: 'CASCADE' })
 Budget.belongsTo(User,         { foreignKey: 'userId' })
 
-module.exports = { sequelize, User, Account, Transaction, Item, Budget }
+User.hasMany(Bill,             { foreignKey: 'userId', onDelete: 'CASCADE' })
+Bill.belongsTo(User,           { foreignKey: 'userId' })
+
+module.exports = { sequelize, User, Account, Transaction, Item, Budget, Bill }

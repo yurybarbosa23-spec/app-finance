@@ -19,7 +19,7 @@ async function register(req, res) {
 
     return res.status(201).json({
       token,
-      user: { id: user.id, nome: user.nome, email: user.email, isAdmin: user.isAdmin } // ← adicionado
+      user: { id: user.id, nome: user.nome, email: user.email, isAdmin: user.isAdmin, createdAt: user.createdAt }
     })
   } catch (err) {
     console.error(err)
@@ -43,7 +43,7 @@ async function login(req, res) {
 
     return res.json({
       token,
-      user: { id: user.id, nome: user.nome, email: user.email, isAdmin: user.isAdmin } // ← adicionado
+      user: { id: user.id, nome: user.nome, email: user.email, isAdmin: user.isAdmin, createdAt: user.createdAt }
     })
   } catch (err) {
     console.error(err)
