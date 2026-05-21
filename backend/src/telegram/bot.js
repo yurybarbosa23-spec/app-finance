@@ -92,78 +92,7 @@ bot.on('message', async (msg) => {
   let loadMsg
   try {
     const { userId } = sessao
-    const msgLower = texto.toLowerCase().trim()
-    const ehPerguntaInformativa = msgLower.includes('como') || msgLower.includes('por que') || msgLower.includes('ajuda')
 
-    // ─── INTERCEPTOR DE SEGURANÇA PARA CANCELAMENTO ─────────────────
-    const termosCancelamento = ['cancela', 'cancele', 'desisti', 'desfaz', 'desfazer', 'deleta a última', 'deletar a última', 'estorna', 'estornar']
-    if (termosCancelamento.some(t => msgLower.includes(t)) && !ehPerguntaInformativa) {
-      try {
-        const resultado = await funcoes.cancelarUltimaTransacao({ userId })
-        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
-      } catch (e) {
-        console.warn('Falha no interceptor de cancelamento Telegram:', e.message)
-      }
-    }
-
-    // ─── INTERCEPTOR DE SEGURANÇA PARA CORREÇÃO DE VALOR ────────────
-    const termosCorrecao = ['corrija', 'corrigir', 'corrige', 'retifica', 'retificar']
-    const ehCorrecao = termosCorrecao.some(t => msgLower.includes(t)) || (msgLower.includes('na verdade foi') && msgLower.match(/\d+/))
-    if (ehCorrecao && !ehPerguntaInformativa) {
-      const match = msgLower.match(/(\d+[\.,]?\d*)/)
-      if (match) {
-        const novoValor = parseFloat(match[0].replace(',', '.'))
-        if (!isNaN(novoValor)) {
-          try {
-            const resultado = await funcoes.corrigirUltimaTransacao({ userId, novoValor })
-            return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
-          } catch (e) {
-            console.warn('Falha no interceptor de correção Telegram:', e.message)
-          }
-        }
-      }
-    }
-
-    // ─── INTERCEPTOR PARA PERGUNTAS ANALÍTICAS ──────────────────────
-    if (msgLower.includes('categoria') && msgLower.includes('mais') && (msgLower.includes('gastei') || msgLower.includes('gasto'))) {
-      try {
-        const resultado = await funcoes.obterCategoriaMaiorGasto({ userId })
-        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
-      } catch (e) {
-        console.warn('Falha no interceptor de maior categoria Telegram:', e.message)
-      }
-    }
-
-    if (msgLower.includes('maior gasto') || msgLower.includes('maior despesa') || msgLower.includes('gastei mais com o que')) {
-      try {
-        const resultado = await funcoes.obterMaiorGasto({ userId })
-        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
-      } catch (e) {
-        console.warn('Falha no interceptor de maior gasto Telegram:', e.message)
-      }
-    }
-
-    // ─── INTERCEPTOR PARA CONSULTA DE SALDO ─────────────────────────
-    const ehPerguntaSaldo = msgLower === 'saldo' || msgLower.includes('meu saldo') || msgLower.includes('quanto tenho') || msgLower.includes('qual o saldo') || msgLower.includes('saldo atual')
-    if (ehPerguntaSaldo) {
-      try {
-        const resultado = await funcoes.obterSaldo({ userId })
-        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
-      } catch (e) {
-        console.warn('Falha no interceptor de saldo Telegram:', e.message)
-      }
-    }
-
-    // ─── INTERCEPTOR PARA LISTAGEM DE TRANSAÇÕES (EXTRATO) ──────────
-    const ehPerguntaTransacoes = msgLower.includes('extrato') || msgLower.includes('lançamento') || msgLower.includes('lancamento') || msgLower.includes('transaç') || msgLower.includes('transac')
-    if (ehPerguntaTransacoes) {
-      try {
-        const resultado = await funcoes.listarTransacoes({ userId })
-        return bot.sendMessage(chatId, resultado, { parse_mode: 'Markdown' })
-      } catch (e) {
-        console.warn('Falha no interceptor de listagem Telegram:', e.message)
-      }
-    }
 
     // ─── PROCESSAMENTO PELA IA ──────────────────────────────────────
     const systemPrompt = await buildSystemPrompt(userId)
@@ -176,7 +105,7 @@ bot.on('message', async (msg) => {
 
     loadMsg = await bot.sendMessage(chatId, '🤔 Processando...')
 
-    const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4:e4b'
+    const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
     const ollamaRes = await fetch('http://localhost:11434/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

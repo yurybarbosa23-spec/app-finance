@@ -69,13 +69,57 @@ const finoraPos = ref({ x: -1, y: -1 }) // -1 means uninitialized → CSS defaul
 const finoraDragging = ref(false)
 const finoraDragOffset = ref({ x: 0, y: 0 })
 
-function initFinoraPosition() {
-  if (finoraPos.value.x === -1) {
-    const w = window.innerWidth
-    const h = window.innerHeight
-    finoraPos.value = { x: w - 420, y: Math.max(40, h - 660) }
+function getFinoraBounds() {
+  const isMobile = window.innerWidth <= 500
+  const margin = isMobile ? 12 : 24
+  const width = isMobile ? Math.max(280, window.innerWidth - margin * 2) : 380
+  const height = isMobile
+    ? Math.min(window.innerHeight - margin * 2, Math.max(320, window.innerHeight - 108))
+    : 580
+  return { isMobile, margin, width, height }
+}
+
+function clampFinoraPosition(pos = finoraPos.value) {
+  const { margin, width, height } = getFinoraBounds()
+  const maxX = Math.max(margin, window.innerWidth - width - margin)
+  const maxY = Math.max(margin, window.innerHeight - height - margin)
+  return {
+    x: Math.max(margin, Math.min(maxX, pos.x)),
+    y: Math.max(margin, Math.min(maxY, pos.y))
   }
 }
+
+function initFinoraPosition() {
+  const { isMobile, margin, width, height } = getFinoraBounds()
+  if (isMobile) {
+    finoraPos.value = { x: margin, y: margin }
+  } else if (finoraPos.value.x === -1) {
+    finoraPos.value = clampFinoraPosition({
+      x: window.innerWidth - width - margin,
+      y: window.innerHeight - height - margin
+    })
+  } else {
+    finoraPos.value = clampFinoraPosition()
+  }
+}
+
+function openFinoraChat() {
+  initFinoraPosition()
+  showFinoraChat.value = true
+}
+
+const finoraWindowStyle = computed(() => {
+  if (finoraPos.value.x < 0) return {}
+  const { width, height } = getFinoraBounds()
+  return {
+    left: `${finoraPos.value.x}px`,
+    top: `${finoraPos.value.y}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+    right: 'auto',
+    bottom: 'auto'
+  }
+})
 
 function onFinoraDragStart(e) {
   const ev = e.touches ? e.touches[0] : e
@@ -94,12 +138,10 @@ function onFinoraDragMove(e) {
   if (!finoraDragging.value) return
   e.preventDefault()
   const ev = e.touches ? e.touches[0] : e
-  const maxX = window.innerWidth - 60
-  const maxY = window.innerHeight - 60
-  finoraPos.value = {
-    x: Math.max(0, Math.min(maxX, ev.clientX - finoraDragOffset.value.x)),
-    y: Math.max(0, Math.min(maxY, ev.clientY - finoraDragOffset.value.y))
-  }
+  finoraPos.value = clampFinoraPosition({
+    x: ev.clientX - finoraDragOffset.value.x,
+    y: ev.clientY - finoraDragOffset.value.y
+  })
 }
 
 function onFinoraDragEnd() {
@@ -1525,7 +1567,7 @@ const lastTransactionsSearch = computed(() => {
     </nav>
     
     <div class="sidebar-footer">
-      <button class="sidebar-action-btn theme-toggle" @click="showFinoraChat=true" title="Falar com a Finora">
+      <button class="sidebar-action-btn theme-toggle" @click="openFinoraChat" title="Falar com a Finora">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-square"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       </button>
       <button @click="modalPerfil=true" class="sidebar-action-btn" title="Perfil">
@@ -1597,7 +1639,9 @@ const lastTransactionsSearch = computed(() => {
               <p class="stat-value">{{ formatar(totalSaidas) }}</p>
             </div>
             <div class="wallet-search-box">
-              <span class="search-icon">🔍</span>
+              <span class="search-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.25" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              </span>
               <input type="text" v-model="searchQuery" placeholder="Buscar..." />
             </div>
             <div class="wallet-actions">
@@ -1629,7 +1673,9 @@ const lastTransactionsSearch = computed(() => {
                   {{ cat.label }}
                 </span>
               </div>
-              <button class="card-menu-btn" @click="aba='historico'">&bull;&bull;&bull;</button>
+              <button class="card-menu-btn" @click="aba='historico'" aria-label="Ver historico">
+                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.25" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+              </button>
             </div>
             
             <div class="sales-pills-row">
@@ -1761,7 +1807,9 @@ const lastTransactionsSearch = computed(() => {
           <div class="dashboard-card my-connections-card">
             <div class="card-header">
               <h3 class="card-title">Metas e Limites</h3>
-              <button class="card-menu-btn" @click="modalAlertas=true">&bull;&bull;&bull;</button>
+              <button class="card-menu-btn" @click="modalAlertas=true" aria-label="Configurar metas e limites">
+                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.25" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+              </button>
             </div>
             
             <div class="connections-body">
@@ -1835,8 +1883,8 @@ const lastTransactionsSearch = computed(() => {
         </div>
 
         <!-- Row 3: Radar de Dívidas -->
-        <div class="dashboard-row" style="margin-top: 1.5rem;">
-          <div class="dashboard-card dividas-overview-card" style="grid-column: 1 / -1;">
+        <div class="dashboard-row dashboard-row-spaced">
+          <div class="dashboard-card dividas-overview-card dashboard-card-full">
             <div class="card-header">
               <h3 class="card-title">📡 Radar de Dívidas & Compromissos</h3>
               <button class="ios-pill-btn blue" @click="aba='dividas'">Gerenciar Dívidas &rarr;</button>
@@ -2507,8 +2555,9 @@ const lastTransactionsSearch = computed(() => {
 </Transition></Teleport>
 
 <!-- FINORA FLOATING BUTTON -->
-<button class="android-17-gemini-btn" @click="showFinoraChat = true">
-  <span class="gemini-icon">✨</span> Fale com a Finora
+<button type="button" class="android-17-gemini-btn" @click="openFinoraChat" @touchend.prevent="openFinoraChat">
+  <span class="gemini-icon">✨</span>
+  <span class="gemini-label">Fale com a Finora</span>
 </button>
 
 <!-- FINORA CHAT — Draggable floating window -->
@@ -2518,7 +2567,7 @@ const lastTransactionsSearch = computed(() => {
   v-if="showFinoraChat"
   class="finora-glass-card"
   :class="{ thinking: finoraIsThinking, dragging: finoraDragging }"
-  :style="finoraPos.x >= 0 ? { left: finoraPos.x + 'px', top: finoraPos.y + 'px' } : {}"
+  :style="finoraWindowStyle"
 >
 
   <!-- Top aurora glow bar -->
@@ -3736,4 +3785,604 @@ const lastTransactionsSearch = computed(() => {
 .text-blue { color: var(--blue); }
 .text-green { color: var(--green); }
 .text-orange { color: var(--orange); }
+
+/* UI optimization layer */
+.ios-app,
+.ios-modal-bg {
+  --bg: #05030a;
+  --surface: rgba(16, 10, 28, 0.88);
+  --surface2: rgba(25, 15, 41, 0.9);
+  --surface3: rgba(34, 22, 55, 0.92);
+  --sep: rgba(176, 152, 255, 0.14);
+  --text2: #aaa4c3;
+  --text3: #69637f;
+  --green: #3ddc97;
+  --red: #fb7185;
+  --blue: #7c3aed;
+  --teal: #22d3ee;
+  --purple: #c084fc;
+  --neon: #b982ff;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.ios-app {
+  background-color: var(--bg);
+}
+
+@media (min-width: 1024px) {
+  .sidebar-desktop {
+    width: 76px;
+    background: linear-gradient(180deg, rgba(13, 7, 25, 0.96), rgba(10, 6, 18, 0.98));
+    border-right-color: rgba(176, 152, 255, 0.12);
+    box-shadow: 12px 0 36px rgba(0, 0, 0, 0.24);
+  }
+
+  .app-main-wrapper {
+    margin-left: 76px;
+    width: calc(100% - 76px);
+  }
+}
+
+.hex-logo {
+  animation: none;
+  filter: drop-shadow(0 0 12px rgba(168, 85, 247, 0.55));
+}
+
+.sidebar-nav {
+  gap: 0.9rem;
+}
+
+.sidebar-tab {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 14px;
+}
+
+.sidebar-tab:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.sidebar-tab.active {
+  background: linear-gradient(180deg, rgba(124, 58, 237, 0.2), rgba(124, 58, 237, 0.08));
+  border-color: rgba(192, 132, 252, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 26px rgba(124, 58, 237, 0.22);
+}
+
+.app-header {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(220px, 1fr);
+  gap: 1rem;
+  height: 4.25rem;
+  padding: 0 1.25rem;
+  background: rgba(5, 3, 10, 0.82);
+  border-bottom-color: rgba(176, 152, 255, 0.1);
+}
+
+.header-left,
+.header-right {
+  min-width: 0;
+}
+
+.header-right {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.header-center-tabs {
+  justify-self: center;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.header-wallet-tab {
+  color: #8f89aa;
+  white-space: nowrap;
+}
+
+.header-wallet-tab.active {
+  color: #f4f0ff;
+}
+
+.user-profile-badge {
+  max-width: 230px;
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.075);
+}
+
+.user-meta {
+  min-width: 0;
+}
+
+.user-name,
+.user-subtext {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-content-area {
+  max-width: 1560px;
+  padding: 1.6rem;
+}
+
+@media (min-width: 1440px) {
+  .app-content-area {
+    padding: 2rem 2.4rem 4rem;
+  }
+}
+
+.inicio-dashboard-layout {
+  gap: 1.25rem;
+}
+
+.dashboard-wallet-card {
+  display: grid;
+  grid-template-columns: minmax(290px, 1fr);
+  gap: 1.35rem;
+  background:
+    linear-gradient(135deg, rgba(22, 13, 38, 0.94), rgba(9, 7, 18, 0.96)),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.08), rgba(192, 132, 252, 0.08));
+  border-color: rgba(192, 132, 252, 0.22);
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dashboard-wallet-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.38), rgba(192, 132, 252, 0.35), transparent);
+  pointer-events: none;
+}
+
+@media (min-width: 1180px) {
+  .dashboard-wallet-card {
+    grid-template-columns: minmax(340px, 0.9fr) minmax(620px, 1.1fr);
+    align-items: center;
+  }
+}
+
+.wallet-left {
+  min-width: 0;
+}
+
+.wallet-icon-wrapper {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 14px;
+  background: rgba(168, 85, 247, 0.1);
+  border-color: rgba(192, 132, 252, 0.34);
+}
+
+.wallet-balance-info {
+  min-width: 0;
+}
+
+.wallet-label {
+  color: #a7a0bd;
+}
+
+.wallet-amount {
+  flex-wrap: wrap;
+  row-gap: 0;
+  line-height: 1.05;
+}
+
+.wallet-currency {
+  color: #77718f;
+}
+
+.wallet-comparison {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.wallet-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(104px, auto)) minmax(190px, 1fr) auto;
+  gap: 0.85rem;
+  justify-content: end;
+  align-items: center;
+  margin-top: 0;
+}
+
+.wallet-stat-item {
+  min-width: 104px;
+}
+
+.wallet-stat-item .stat-label {
+  color: #8f89aa;
+  font-size: 0.68rem;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.wallet-stat-item .stat-value {
+  font-size: 1.05rem;
+  line-height: 1.15;
+}
+
+.wallet-search-box {
+  width: 100%;
+  max-width: none;
+  min-width: 180px;
+  height: 2.65rem;
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.search-icon {
+  display: inline-flex;
+  color: #9bdcf2;
+}
+
+.wallet-actions {
+  gap: 0.55rem;
+}
+
+.wallet-btn-action {
+  height: 2.65rem;
+  border-radius: 999px;
+  padding: 0 0.9rem;
+  font-weight: 700;
+}
+
+.wallet-circle-btn {
+  width: 2.65rem;
+  height: 2.65rem;
+}
+
+.dashboard-row {
+  gap: 1.25rem;
+}
+
+@media (min-width: 1180px) {
+  .dashboard-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.dashboard-row-spaced {
+  margin-top: 1.25rem;
+}
+
+.dashboard-card-full {
+  grid-column: 1 / -1;
+}
+
+.dashboard-card,
+.insight-mini-card,
+.next-month-card,
+.stat-group,
+.projected-balance-banner,
+.alert-box {
+  border-color: rgba(176, 152, 255, 0.12);
+}
+
+.dashboard-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(18, 10, 31, 0.92), rgba(13, 8, 23, 0.94));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.dashboard-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0), rgba(34, 211, 238, 0.28), rgba(192, 132, 252, 0.2), rgba(34, 211, 238, 0));
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.card-header {
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+
+.card-title {
+  line-height: 1.25;
+}
+
+.header-legend {
+  margin-left: auto;
+}
+
+.card-menu-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  color: #847d9e;
+  flex: 0 0 auto;
+}
+
+.card-menu-btn:hover {
+  color: #fff;
+  background: rgba(168, 85, 247, 0.14);
+  border-color: rgba(192, 132, 252, 0.24);
+}
+
+.sales-pills-row {
+  gap: 0.85rem;
+}
+
+.sales-pill-item {
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  min-height: 3.85rem;
+}
+
+.pill-title {
+  color: #797392;
+}
+
+.pill-val {
+  line-height: 1.15;
+}
+
+.bar-chart-container,
+.indicators-chart-container {
+  height: 178px;
+}
+
+.bar-chart-y-axis,
+.bar-label,
+.btc-label,
+.card-subtitle {
+  color: #6f6986;
+}
+
+.bar-track-bg {
+  width: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.indicators-periods {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.indicators-periods button {
+  color: #746e8c;
+}
+
+.indicators-periods button.active {
+  background: linear-gradient(135deg, #8b5cf6, #c084fc);
+}
+
+.indicators-bottom-row {
+  padding-top: 0.15rem;
+}
+
+.connections-body {
+  gap: 1.25rem;
+}
+
+.conn-label {
+  color: #a19bb9;
+}
+
+.progress-segment {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.insights-grid-col {
+  gap: 1.25rem;
+}
+
+.insight-mini-card {
+  min-height: 11.5rem;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(18, 10, 31, 0.92), rgba(13, 8, 23, 0.94));
+}
+
+.insight-icon-container {
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(192, 132, 252, 0.18);
+}
+
+.insight-label {
+  color: #aaa4c3;
+}
+
+.insight-action-btn {
+  color: #746e8c;
+}
+
+.insight-sparkline-bg {
+  opacity: 0.38;
+}
+
+.dividas-overview-card .card-header {
+  align-items: center;
+}
+
+.dividas-overview-body {
+  gap: 1.25rem;
+}
+
+.overview-main-stat {
+  gap: 0.85rem;
+}
+
+.stat-group {
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 14px;
+}
+
+.stat-group .stat-label {
+  color: #8f89aa;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.stat-group .stat-value {
+  font-size: 1.25rem;
+  line-height: 1.15;
+}
+
+.projected-balance-banner,
+.alert-box,
+.next-month-card {
+  border-radius: 14px;
+}
+
+.next-month-card {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(34, 211, 238, 0.65);
+  outline-offset: 2px;
+}
+
+.android-17-gemini-btn {
+  left: auto;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  transform: none;
+  display: flex;
+  z-index: 1200;
+  pointer-events: auto;
+}
+
+.android-17-gemini-btn:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+
+.android-17-gemini-btn:active {
+  transform: scale(0.96);
+}
+
+@media (max-width: 1180px) {
+  .app-header {
+    grid-template-columns: minmax(140px, 1fr) auto;
+  }
+
+  .header-center-tabs {
+    display: none;
+  }
+
+  .wallet-stats {
+    grid-template-columns: repeat(2, minmax(118px, 1fr));
+    justify-content: stretch;
+  }
+
+  .wallet-search-box,
+  .wallet-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-header {
+    height: 4rem;
+    padding: 0 1rem;
+  }
+
+  .header-view-title {
+    font-size: 1rem;
+  }
+
+  .user-profile-badge {
+    padding-right: 0.3rem;
+  }
+
+  .user-meta {
+    display: none;
+  }
+
+  .app-content-area {
+    padding: 1rem 0.85rem 5.5rem;
+  }
+
+  .dashboard-wallet-card,
+  .dashboard-card {
+    border-radius: 16px;
+    padding: 1rem;
+  }
+
+  .wallet-left {
+    align-items: flex-start;
+  }
+
+  .wallet-amount {
+    font-size: 1.95rem;
+  }
+
+  .wallet-currency {
+    font-size: 0.95rem;
+  }
+
+  .wallet-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .wallet-search-box,
+  .wallet-actions {
+    grid-column: auto;
+  }
+
+  .wallet-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 2.65rem;
+  }
+
+  .wallet-btn-action {
+    justify-content: center;
+    padding: 0 0.65rem;
+  }
+
+  .wallet-btn-action span {
+    display: none;
+  }
+
+  .card-header {
+    flex-wrap: wrap;
+  }
+
+  .header-legend {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start !important;
+    margin-left: 0;
+  }
+
+  .sales-pills-row,
+  .overview-main-stat {
+    flex-direction: column;
+  }
+
+  .insights-grid-col {
+    grid-template-columns: 1fr;
+  }
+
+  .bar-chart-container,
+  .indicators-chart-container {
+    height: 156px;
+  }
+
+  .android-17-gemini-btn {
+    right: 0.9rem;
+    bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 4.25rem);
+    width: 2.85rem;
+    height: 2.85rem;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .android-17-gemini-btn .gemini-label {
+    display: none;
+  }
+}
 </style>

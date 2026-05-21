@@ -469,158 +469,6 @@ async function chat(req, res) {
   }
 
   try {
-    // ─── INTERCEPTOR DE SEGURANÇA PARA CANCELAMENTO ────────────────
-    const msgLower = mensagem.toLowerCase().trim()
-    const termosCancelamento = ['cancela', 'cancele', 'desisti', 'desfaz', 'desfazer', 'deleta a última', 'deletar a última', 'estorna', 'estornar']
-    const ehPerguntaInformativa = msgLower.includes('como') || msgLower.includes('por que') || msgLower.includes('ajuda')
-
-    // ─── INTERCEPTOR LOCAL: SAUDAÇÕES E CONVERSA CASUAL (não chama Ollama) ────
-    const saudacoes = ['oi', 'olá', 'ola', 'hey', 'oi finora', 'olá finora', 'boa tarde', 'bom dia', 'boa noite']
-    const ehSaudacao = saudacoes.some(s => msgLower === s || msgLower.startsWith(s + ' ') || msgLower.startsWith(s + ','))
-    const ehTudoBem = msgLower.includes('tudo bem') || msgLower.includes('como vai') || msgLower.includes('como está') || msgLower.includes('como esta')
-    const ehObrigado = msgLower.includes('obrigado') || msgLower.includes('obrigada') || msgLower.includes('valeu') || msgLower.includes('thanks')
-    const usuario = await User.findByPk(userId)
-    const nomeUsuario = usuario ? usuario.nome.split(' ')[0] : 'usuário'
-
-    if (ehSaudacao || ehTudoBem) {
-      const respostas = [
-        `Olá, **${nomeUsuario}**! 😊 Tudo ótimo por aqui! Estou pronta para te ajudar com suas finanças. Posso consultar saldos, registrar gastos, listar dívidas ou te dar uma análise dos seus gastos. O que você precisa hoje?`,
-        `Oi, **${nomeUsuario}**! ✨ Está ótimo te ver! Como posso te ajudar hoje? Posso verificar seu saldo, registrar transações ou analisar seus gastos do mês.`,
-        `Olá, **${nomeUsuario}**! 💰 Tudo bem sim, obrigada! Pronta para ajudar. Quer ver seu saldo, registrar um gasto ou checar suas dívidas?`
-      ]
-      return res.json({ text: respostas[Math.floor(Math.random() * respostas.length)] })
-    }
-
-    if (ehObrigado) {
-      const respostas = [
-        `De nada, **${nomeUsuario}**! 😊 Sempre à disposição. Precisa de mais alguma coisa?`,
-        `Fico feliz em ajudar, **${nomeUsuario}**! ✨ Se precisar de mais alguma coisa, é só me perguntar.`,
-        `Por nada! 💳 Estou aqui sempre que precisar, **${nomeUsuario}**.`
-      ]
-      return res.json({ text: respostas[Math.floor(Math.random() * respostas.length)] })
-    }
-    
-    if (termosCancelamento.some(t => msgLower.includes(t)) && !ehPerguntaInformativa) {
-      try {
-        const resultado = await funcoes.cancelarUltimaTransacao({ userId })
-        return res.json({ text: resultado })
-      } catch (e) {
-        console.warn('Falha no interceptor de cancelamento:', e.message)
-      }
-    }
-
-    // ─── INTERCEPTOR DE SEGURANÇA PARA CORREÇÃO DE VALOR ────────────
-    const termosCorrecao = ['corrija', 'corrigir', 'corrige', 'retifica', 'retificar']
-    const ehCorrecao = termosCorrecao.some(t => msgLower.includes(t)) || (msgLower.includes('na verdade foi') && msgLower.match(/\d+/))
-    
-    if (ehCorrecao && !ehPerguntaInformativa) {
-      const match = msgLower.match(/(\d+[\.,]?\d*)/)
-      if (match) {
-        const novoValor = parseFloat(match[0].replace(',', '.'))
-        if (!isNaN(novoValor)) {
-          try {
-            const resultado = await funcoes.corrigirUltimaTransacao({ userId, novoValor })
-            return res.json({ text: resultado })
-          } catch (e) {
-            console.warn('Falha no interceptor de correção:', e.message)
-          }
-        }
-      }
-    }
-
-    // ─── INTERCEPTOR PARA PERGUNTAS ANALÍTICAS ──────────────────────
-    if (msgLower.includes('categoria') && msgLower.includes('mais') && (msgLower.includes('gastei') || msgLower.includes('gasto'))) {
-      try {
-        const resultado = await funcoes.obterCategoriaMaiorGasto({ userId })
-        return res.json({ text: resultado })
-      } catch (e) {
-        console.warn('Falha no interceptor de maior categoria:', e.message)
-      }
-    }
-
-    if (msgLower.includes('maior gasto') || msgLower.includes('maior despesa') || msgLower.includes('gastei mais com o que')) {
-      try {
-        const resultado = await funcoes.obterMaiorGasto({ userId })
-        return res.json({ text: resultado })
-      } catch (e) {
-        console.warn('Falha no interceptor de maior gasto:', e.message)
-      }
-    }
-
-    // ─── INTERCEPTOR PARA CONSULTA DE SALDO ─────────────────────────
-    const ehPerguntaSaldo = msgLower === 'saldo' || msgLower.includes('meu saldo') || msgLower.includes('quanto tenho') || msgLower.includes('qual o saldo') || msgLower.includes('saldo atual')
-    if (ehPerguntaSaldo) {
-      try {
-        const resultado = await funcoes.obterSaldo({ userId })
-        return res.json({ text: resultado })
-      } catch (e) {
-        console.warn('Falha no interceptor de saldo:', e.message)
-      }
-    }
-
-    // ─── INTERCEPTOR PARA LISTAGEM DE TRANSAÇÕES (EXTRATO) ──────────
-    const ehPerguntaTransacoes = msgLower.includes('extrato') || msgLower.includes('lançamento') || msgLower.includes('lancamento') || msgLower.includes('transaç') || msgLower.includes('transac')
-    if (ehPerguntaTransacoes && !msgLower.includes('contas')) {
-      try {
-        const resultado = await funcoes.listarTransacoes({ userId })
-        return res.json({ text: resultado })
-      } catch (e) {
-        console.warn('Falha no interceptor de listagem:', e.message)
-      }
-    }
-
-    // ─── INTERCEPTOR PARA PAGAMENTO DE CONTA (paguei / registre pagamento) ──
-    const ehPagamentoBill = (
-      (msgLower.includes('paguei') || msgLower.includes('pagar') || msgLower.includes('quitar') || msgLower.includes('quitei')) &&
-      (msgLower.includes('ela') || msgLower.includes('essa conta') || msgLower.includes('essa divida') || msgLower.includes('essa dívida') || msgLower.includes('registre'))
-    )
-    if (ehPagamentoBill && !ehPerguntaInformativa) {
-      const bills = await Bill.findAll({ where: { userId, pagaEsteMes: false } })
-      const contas = await Account.findAll({ where: { userId } })
-      if (bills.length === 1 && contas.length === 1) {
-        // Só tem uma dívida e uma conta → executa direto
-        try {
-          const resultado = await funcoes.pagarConta({ userId, billId: bills[0].id, accountId: contas[0].id })
-          return res.json({ text: resultado })
-        } catch (e) {
-          return res.json({ text: `❌ Erro ao pagar conta: ${e.message}` })
-        }
-      } else if (bills.length === 1 && contas.length > 1) {
-        // Só tem uma dívida mas múltiplas contas → pergunta qual conta
-        return res.json({
-          type: 'perguntarConta',
-          mensagem: `💳 De qual conta devo retirar **R$${Number(bills[0].valor).toFixed(2)}** para pagar **"${bills[0].descricao}"**?`,
-          contas: contas.map(c => ({ id: c.id, nome: c.nome, banco: c.banco, saldo: c.saldo })),
-          acaoPendente: { acao: 'pagarConta', params: { billId: bills[0].id } }
-        })
-      } else if (bills.length > 1) {
-        // Múltiplas dívidas abertas → lista para escolher
-        const lista = bills.map((b, i) => `${i + 1}. **${b.descricao}** - R$${Number(b.valor).toFixed(2)} (vence dia ${b.diaVencimento})`).join('\n')
-        return res.json({ text: `📅 Qual conta você deseja pagar? Diga o número ou o nome:\n\n${lista}` })
-      }
-    }
-
-    // ─── INTERCEPTOR PARA LISTAGEM DE CONTAS A PAGAR ────────────────
-    const ehPerguntaContasPagar = msgLower.includes('contas a pagar') || msgLower.includes('dívida') || msgLower.includes('divida') || msgLower.includes('minhas contas') || msgLower.includes('contas do mês') || msgLower.includes('contas do mes')
-    if (ehPerguntaContasPagar && !ehPerguntaInformativa) {
-      try {
-        const resultado = await funcoes.listarContasPagar({ userId })
-        return res.json({ text: resultado })
-      } catch (e) {
-        console.warn('Falha no interceptor de contas a pagar:', e.message)
-      }
-    }
-
-    // ─── INTERCEPTOR PARA LISTAGEM DE ITENS DO ESTOQUE ──────────────
-    const ehPerguntaEstoque = msgLower.includes('estoque') || msgLower.includes('inventário') || msgLower.includes('inventario') || msgLower.includes('meus itens') || msgLower.includes('meus produtos') || msgLower.includes('lista de produtos')
-    if (ehPerguntaEstoque && !ehPerguntaInformativa) {
-      try {
-        const resultado = await funcoes.listarItensEstoque({ userId })
-        return res.json({ text: resultado })
-      } catch (e) {
-        console.warn('Falha no interceptor de estoque:', e.message)
-      }
-    }
 
     const systemPrompt = await buildSystemPrompt(userId)
     console.log('--- DEBUG SYSTEM PROMPT DADOS ATUAIS ---')
@@ -634,7 +482,7 @@ async function chat(req, res) {
     ]
 
     // Chamada para o Ollama com keep_alive=-1 (mantém modelo carregado na VRAM)
-    const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4:e4b'
+    const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
     const abortCtrl = new AbortController()
     const ollamaTimeout = setTimeout(() => abortCtrl.abort(), 30000)
     let ollamaRes
@@ -733,7 +581,7 @@ async function chat(req, res) {
 
 async function warmupModel() {
   try {
-    const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4:e4b'
+    const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
     console.log(`🔥 Pré-carregando modelo ${OLLAMA_MODEL} na VRAM...`)
     const res = await fetch('http://localhost:11434/api/chat', {
       method: 'POST',
